@@ -1,0 +1,8 @@
+{
+  "name": "OmniFly Pro",
+  "description": "OmniFly Pro — World-Class Travel & Tourism Enterprise ERP (IATA NDC & AIR/MIR Spooler, GDS Terminal, Global Hotel Aggregator & Markup Matrix, Charter Flight Blocks & Allotments, ZATCA Phase 2 E-Invoicing & FX Revaluation, Virtual Credit Cards VCC, AI Smart Itinerary Planner, B2B/B2C Portals, IATA BSP Reconciliation, WhatsApp Hub, Multi-Branch & Onyx Double-Entry Accounting).",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
