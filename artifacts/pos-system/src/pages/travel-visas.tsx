@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
-  Globe, Plus, Search, Edit2, Trash2, CheckCircle2, Clock, AlertCircle,
+  Globe, Plus, Search, Edit2, Trash2, CheckCircle2, Clock, AlertCircle, AlertTriangle, User,
   FileText, CheckSquare, Printer, MessageCircle, UserPlus, Calendar,
   DollarSign, Building2, Eye, ShieldCheck, Share2, ArrowUpDown, RefreshCw,
   Coins, Download, FileSpreadsheet, Layers, Check, ChevronDown, Landmark,
@@ -366,6 +366,7 @@ export default function TravelVisasPage() {
     // عمولة المكتب الخاص بنا والربح
     agency_commission: "0",
     commission_currency: "SAR",
+    commission_statement: "",
     exchange_rate: "1",
 
     // المستندات والملاحظات
@@ -842,6 +843,7 @@ export default function TravelVisasPage() {
       supplier_statement: "",
       agency_commission: "0",
       commission_currency: "SAR",
+      commission_statement: "",
       exchange_rate: "1",
       missing_docs: "",
       notes: ""
@@ -883,11 +885,25 @@ export default function TravelVisasPage() {
       supplier_statement: v.supplier_statement || "",
       agency_commission: String(v.agency_commission ?? ((v.selling_price || 0) - (v.cost_price || 0))),
       commission_currency: v.commission_currency || v.customer_currency || "SAR",
+      commission_statement: v.commission_statement || "",
       exchange_rate: String(v.exchange_rate ?? 1),
       missing_docs: v.missing_docs || "",
       notes: v.notes || ""
     });
     setModalOpen(true);
+  };
+
+  // Payment status change handler
+  const handlePaymentStatusChange = (status: string) => {
+    const sell = Number(form.selling_price || 0);
+    if (status === "paid") {
+      setForm(f => ({ ...f, payment_status: status, paid_amount: String(sell), remaining_balance: "0" }));
+    } else if (status === "unpaid") {
+      setForm(f => ({ ...f, payment_status: status, paid_amount: "0", remaining_balance: String(sell) }));
+    } else {
+      const paid = Number(form.paid_amount || 0);
+      setForm(f => ({ ...f, payment_status: status, remaining_balance: String(Math.max(0, sell - paid)) }));
+    }
   };
 
   // Payment method change handler

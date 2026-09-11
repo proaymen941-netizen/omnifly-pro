@@ -1568,17 +1568,52 @@ function runMigrations() {
       CREATE TABLE IF NOT EXISTS travel_hotels (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         booking_ref TEXT UNIQUE,
+        voucher_number TEXT,
+        confirmation_number TEXT,
         customer_id INTEGER REFERENCES customers(id),
+        customer_name TEXT,
         passenger_id INTEGER REFERENCES travel_passengers(id),
+        guest_name TEXT,
+        guest_phone TEXT,
+        guest_passport TEXT,
+        hotel_db_id INTEGER REFERENCES travel_hotels_db(id),
         hotel_name TEXT NOT NULL,
-        city_country TEXT NOT NULL,
+        country TEXT,
+        city TEXT,
+        city_country TEXT,
         check_in TEXT,
         check_out TEXT,
         room_type TEXT DEFAULT 'مزدوجة',
         nights INTEGER DEFAULT 1,
+        customer_days INTEGER DEFAULT 1,
+        supplier_days INTEGER DEFAULT 1,
+        rooms_count INTEGER DEFAULT 1,
+        guests_count INTEGER DEFAULT 1,
+        meal_plan TEXT DEFAULT 'إفطار شامل (Bed & Breakfast)',
         cost_price REAL DEFAULT 0,
         selling_price REAL DEFAULT 0,
+        commission REAL DEFAULT 0,
+        profit REAL DEFAULT 0,
+        customer_currency TEXT DEFAULT 'SAR',
+        supplier_currency TEXT DEFAULT 'SAR',
+        commission_currency TEXT DEFAULT 'SAR',
+        customer_statement TEXT,
+        supplier_statement TEXT,
+        commission_statement TEXT,
+        payment_method TEXT DEFAULT 'cash',
+        payment_status TEXT DEFAULT 'paid',
+        paid_amount REAL DEFAULT 0,
+        remaining_balance REAL DEFAULT 0,
+        supplier_payment_method TEXT DEFAULT 'credit',
+        supplier_payment_status TEXT DEFAULT 'unpaid',
+        supplier_paid_amount REAL DEFAULT 0,
+        supplier_remaining_balance REAL DEFAULT 0,
+        supplier_office_id INTEGER REFERENCES travel_partner_offices(id),
+        supplier_office_name TEXT,
+        supplier_id INTEGER,
+        supplier_name TEXT,
         status TEXT DEFAULT 'confirmed',
+        issue_date TEXT,
         notes TEXT,
         created_at TEXT DEFAULT (datetime('now', 'localtime'))
       );
@@ -5288,12 +5323,210 @@ export function ensureUmrahPilgrimsData(): void {
   }
 }
 
+export function ensureTravelHotelsColumns() {
+  try {
+    const cols = (db.prepare("PRAGMA table_info(travel_hotels)").all() as any[]).map(c => c.name);
+    const set = new Set(cols);
+    const required: [string, string][] = [
+      ["booking_ref", "TEXT"],
+      ["voucher_number", "TEXT"],
+      ["confirmation_number", "TEXT"],
+      ["customer_id", "INTEGER"],
+      ["customer_name", "TEXT"],
+      ["passenger_id", "INTEGER"],
+      ["guest_name", "TEXT"],
+      ["guest_phone", "TEXT"],
+      ["guest_passport", "TEXT"],
+      ["hotel_db_id", "INTEGER"],
+      ["hotel_name", "TEXT"],
+      ["country", "TEXT"],
+      ["city", "TEXT"],
+      ["city_country", "TEXT"],
+      ["check_in", "TEXT"],
+      ["check_out", "TEXT"],
+      ["room_type", "TEXT DEFAULT 'مزدوجة'"],
+      ["nights", "INTEGER DEFAULT 1"],
+      ["customer_days", "INTEGER DEFAULT 1"],
+      ["supplier_days", "INTEGER DEFAULT 1"],
+      ["rooms_count", "INTEGER DEFAULT 1"],
+      ["guests_count", "INTEGER DEFAULT 1"],
+      ["meal_plan", "TEXT DEFAULT 'إفطار شامل (Bed & Breakfast)'"],
+      ["cost_price", "REAL DEFAULT 0"],
+      ["selling_price", "REAL DEFAULT 0"],
+      ["commission", "REAL DEFAULT 0"],
+      ["profit", "REAL DEFAULT 0"],
+      ["customer_currency", "TEXT DEFAULT 'SAR'"],
+      ["supplier_currency", "TEXT DEFAULT 'SAR'"],
+      ["commission_currency", "TEXT DEFAULT 'SAR'"],
+      ["customer_statement", "TEXT"],
+      ["supplier_statement", "TEXT"],
+      ["commission_statement", "TEXT"],
+      ["payment_method", "TEXT DEFAULT 'cash'"],
+      ["payment_status", "TEXT DEFAULT 'paid'"],
+      ["paid_amount", "REAL DEFAULT 0"],
+      ["remaining_balance", "REAL DEFAULT 0"],
+      ["supplier_payment_method", "TEXT DEFAULT 'credit'"],
+      ["supplier_payment_status", "TEXT DEFAULT 'unpaid'"],
+      ["supplier_paid_amount", "REAL DEFAULT 0"],
+      ["supplier_remaining_balance", "REAL DEFAULT 0"],
+      ["supplier_office_id", "INTEGER"],
+      ["supplier_office_name", "TEXT"],
+      ["supplier_id", "INTEGER"],
+      ["supplier_name", "TEXT"],
+      ["status", "TEXT DEFAULT 'confirmed'"],
+      ["issue_date", "TEXT"],
+      ["notes", "TEXT"]
+    ];
+    for (const [col, colType] of required) {
+      if (!set.has(col)) {
+        try { db.exec(`ALTER TABLE travel_hotels ADD COLUMN ${col} ${colType}`); } catch {}
+      }
+    }
+  } catch (e) {
+    console.error("ensureTravelHotelsColumns warning:", e);
+  }
+}
+
+export function ensureTravelBusBookingsColumns() {
+  try {
+    const cols = (db.prepare("PRAGMA table_info(travel_bus_bookings)").all() as any[]).map(c => c.name);
+    const set = new Set(cols);
+    const required: [string, string][] = [
+      ["booking_number", "TEXT"],
+      ["ticket_number", "TEXT"],
+      ["pnr_number", "TEXT"],
+      ["trip_type", "TEXT DEFAULT 'one_way'"],
+      ["bus_type", "TEXT"],
+      ["bus_number", "TEXT"],
+      ["seat_number", "TEXT"],
+      ["customer_id", "INTEGER"],
+      ["customer_name", "TEXT"],
+      ["passenger_id", "INTEGER"],
+      ["passenger_name", "TEXT"],
+      ["passenger_phone", "TEXT"],
+      ["passenger_national_id", "TEXT"],
+      ["selling_price", "REAL DEFAULT 0"],
+      ["customer_currency", "TEXT DEFAULT 'SAR'"],
+      ["customer_statement", "TEXT"],
+      ["company_id", "INTEGER"],
+      ["company_name", "TEXT"],
+      ["cost_price", "REAL DEFAULT 0"],
+      ["supplier_currency", "TEXT DEFAULT 'SAR'"],
+      ["supplier_statement", "TEXT"],
+      ["agency_commission", "REAL DEFAULT 0"],
+      ["commission_currency", "TEXT DEFAULT 'SAR'"],
+      ["commission_statement", "TEXT"],
+      ["exchange_rate", "REAL DEFAULT 1"],
+      ["origin_city", "TEXT"],
+      ["origin_station", "TEXT"],
+      ["destination_city", "TEXT"],
+      ["destination_station", "TEXT"],
+      ["departure_date", "TEXT"],
+      ["departure_time", "TEXT"],
+      ["boarding_time", "TEXT"],
+      ["arrival_date", "TEXT"],
+      ["arrival_time", "TEXT"],
+      ["return_departure_date", "TEXT"],
+      ["luggage_weight", "REAL DEFAULT 30"],
+      ["luggage_pieces", "INTEGER DEFAULT 2"],
+      ["payment_method", "TEXT DEFAULT 'cash'"],
+      ["payment_status", "TEXT DEFAULT 'paid'"],
+      ["paid_amount", "REAL DEFAULT 0"],
+      ["remaining_balance", "REAL DEFAULT 0"],
+      ["supplier_payment_method", "TEXT DEFAULT 'credit'"],
+      ["supplier_payment_status", "TEXT DEFAULT 'unpaid'"],
+      ["supplier_paid_amount", "REAL DEFAULT 0"],
+      ["supplier_remaining_balance", "REAL DEFAULT 0"],
+      ["status", "TEXT DEFAULT 'confirmed'"],
+      ["issue_date", "TEXT"],
+      ["issued_by", "TEXT"],
+      ["notes", "TEXT"]
+    ];
+    for (const [col, colType] of required) {
+      if (!set.has(col)) {
+        try { db.exec(`ALTER TABLE travel_bus_bookings ADD COLUMN ${col} ${colType}`); } catch {}
+      }
+    }
+  } catch (e) {
+    console.error("ensureTravelBusBookingsColumns warning:", e);
+  }
+}
+
+export function ensureTravelVisasColumns() {
+  try {
+    const cols = (db.prepare("PRAGMA table_info(travel_visas)").all() as any[]).map(c => c.name);
+    const set = new Set(cols);
+    const required: [string, string][] = [
+      ["visa_number", "TEXT"],
+      ["application_number", "TEXT"],
+      ["customer_id", "INTEGER"],
+      ["passenger_id", "INTEGER"],
+      ["country", "TEXT"],
+      ["visa_type", "TEXT"],
+      ["status", "TEXT DEFAULT 'under_process'"],
+      ["application_date", "TEXT"],
+      ["expected_travel_date", "TEXT"],
+      ["expiry_date", "TEXT"],
+      ["duration_days", "INTEGER DEFAULT 30"],
+      ["cost_price", "REAL DEFAULT 0"],
+      ["selling_price", "REAL DEFAULT 0"],
+      ["office_fees", "REAL DEFAULT 0"],
+      ["paid_amount", "REAL DEFAULT 0"],
+      ["remaining_balance", "REAL DEFAULT 0"],
+      ["responsible_employee", "TEXT"],
+      ["embassy_entity", "TEXT"],
+      ["supplier_agent", "TEXT"],
+      ["supplier_office_id", "INTEGER"],
+      ["supplier_office_name", "TEXT"],
+      ["customer_currency", "TEXT DEFAULT 'SAR'"],
+      ["customer_statement", "TEXT"],
+      ["supplier_currency", "TEXT DEFAULT 'SAR'"],
+      ["supplier_statement", "TEXT"],
+      ["agency_commission", "REAL DEFAULT 0"],
+      ["commission_currency", "TEXT DEFAULT 'SAR'"],
+      ["exchange_rate", "REAL DEFAULT 1"],
+      ["payment_method", "TEXT DEFAULT 'cash'"],
+      ["payment_status", "TEXT DEFAULT 'paid'"],
+      ["issued_visa_number", "TEXT"],
+      ["issue_date", "TEXT"],
+      ["rejection_reason", "TEXT"],
+      ["rejection_date", "TEXT"],
+      ["delivered_to", "TEXT"],
+      ["delivery_date", "TEXT"],
+      ["delivery_method", "TEXT"],
+      ["delivery_notes", "TEXT"],
+      ["border_number", "TEXT"],
+      ["service_voucher_no", "TEXT"],
+      ["checklist_passport", "INTEGER DEFAULT 0"],
+      ["checklist_photos", "INTEGER DEFAULT 0"],
+      ["checklist_hotel", "INTEGER DEFAULT 0"],
+      ["checklist_ticket", "INTEGER DEFAULT 0"],
+      ["checklist_bank", "INTEGER DEFAULT 0"],
+      ["checklist_job_letter", "INTEGER DEFAULT 0"],
+      ["checklist_insurance", "INTEGER DEFAULT 0"],
+      ["checklist_extra", "INTEGER DEFAULT 0"],
+      ["missing_docs", "TEXT"],
+      ["notes", "TEXT"]
+    ];
+    for (const [col, colType] of required) {
+      if (!set.has(col)) {
+        try { db.exec(`ALTER TABLE travel_visas ADD COLUMN ${col} ${colType}`); } catch {}
+      }
+    }
+  } catch (e) {
+    console.error("ensureTravelVisasColumns warning:", e);
+  }
+}
+
 initSchema();
 runMigrations();
 seedData();
 ensureDefaultAccountingChart();
 syncSupplierAccounts();
 ensureUmrahPilgrimsData();
+ensureTravelHotelsColumns();
+ensureTravelBusBookingsColumns();
+ensureTravelVisasColumns();
 
 export function createDoubleEntryJournal(
   entryDate: string,

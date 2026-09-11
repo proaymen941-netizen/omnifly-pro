@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, logAudit, syncSupplierAccounts } from "../lib/sqlite";
+import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, logAudit, syncSupplierAccounts, ensureTravelBusBookingsColumns } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
 import { getCustomerAccountCode, getSupplierAccountCode } from "./customers";
 import { syncJournalEntryForSource } from "./travel";
@@ -623,6 +623,7 @@ router.get("/travel/bus-bookings/:id", (req, res) => {
 });
 
 router.post("/travel/bus-bookings", (req, res) => {
+  ensureTravelBusBookingsColumns();
   try {
     const user = getAuthUser(req);
     if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }

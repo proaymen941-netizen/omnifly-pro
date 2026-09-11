@@ -373,6 +373,26 @@ export default function TravelBusTicketsPage() {
     }
   };
 
+  const handlePaymentStatusChange = (status: string) => {
+    handleCustomerPaymentStatusChange(status);
+  };
+
+  const handlePaidAmountChange = (val: string) => {
+    const paid = Number(val) || 0;
+    const sell = Number(form.selling_price) || 0;
+    const rem = Math.max(0, sell - paid);
+    let status = form.payment_status;
+    if (paid >= sell && sell > 0) status = "paid";
+    else if (paid > 0) status = "partial";
+    else status = "unpaid";
+    setForm((prev: any) => ({
+      ...prev,
+      paid_amount: val,
+      remaining_balance: String(rem),
+      payment_status: status
+    }));
+  };
+
   const handleCostPriceChange = (val: string) => {
     const cost = Number(val) || 0;
     const sell = Number(form.selling_price) || 0;
@@ -1448,7 +1468,7 @@ export default function TravelBusTicketsPage() {
                         <select
                           required
                           value={form.payment_status}
-                          onChange={e => handlePaymentStatusChange(e.target.value)}
+                          onChange={e => handleCustomerPaymentStatusChange(e.target.value)}
                           className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold"
                         >
                           <option value="paid">مسدد بالكامل</option>
@@ -1671,10 +1691,10 @@ export default function TravelBusTicketsPage() {
                     <Button
                       type="button"
                       variant="destructive"
-                      disabled={deleteMutation.isPending}
+                      disabled={deleteBookingMutation.isPending}
                       onClick={() => {
                         if (confirm(`هل أنت متأكد من حذف الحجز نهائياً؟`)) {
-                          deleteMutation.mutate(editingBooking.id);
+                          deleteBookingMutation.mutate(editingBooking.id);
                           setModalOpen(false);
                         }
                       }}

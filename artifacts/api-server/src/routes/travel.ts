@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, syncSupplierAccounts } from "../lib/sqlite";
+import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, syncSupplierAccounts, ensureTravelVisasColumns, ensureTravelHotelsColumns } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
 import { recordAuditLog } from "./audit";
 import { triggerTravelNotificationEvent } from "./travel-notifications";
@@ -1538,75 +1538,80 @@ router.post("/travel/visas", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
 
-  const {
-    application_number, customer_id, passenger_id, country, visa_type, status,
-    application_date, expected_travel_date, expiry_date, duration_days, cost_price, selling_price,
-    office_fees, paid_amount, responsible_employee, embassy_entity, supplier_agent,
-    supplier_office_id, supplier_office_name,    customer_currency, customer_statement,
-    supplier_currency, supplier_statement, agency_commission, commission_currency, exchange_rate,
-    payment_method, payment_status,
-    issued_visa_number, issue_date, rejection_reason, rejection_date, delivered_to, delivery_date, delivery_method, delivery_notes, border_number, service_voucher_no,
-    checklist_passport, checklist_photos, checklist_hotel, checklist_ticket,
-    checklist_bank, checklist_job_letter, checklist_insurance, checklist_extra,
-    missing_docs, notes
-  } = req.body;
+  ensureTravelVisasColumns();
 
-  const payMethod = payment_method || 'cash';
-  const cost = Number(cost_price || 0);
-  const sell = Number(selling_price || 0);
-  const paid = Number(paid_amount !== undefined ? paid_amount : (payMethod === 'credit' ? 0 : sell));
-  const rem = sell - paid;
-  const payStatus = payment_status || (paid > 0 ? (paid >= sell ? 'paid' : 'partial') : (payMethod === 'credit' ? 'unpaid' : 'paid'));
-  const appNum = application_number || `VSA-${Date.now().toString().slice(-6)}`;
-  const comm = agency_commission !== undefined && agency_commission !== "" ? Number(agency_commission) : (sell - cost);
-
-  // If supplier_office_id was passed, lookup supplier_office_name if empty
-  let suppName = supplier_office_name;
-  if (supplier_office_id && !suppName) {
-    const off: any = db.prepare("SELECT name FROM travel_partner_offices WHERE id = ?").get(supplier_office_id);
-    if (off) suppName = off.name;
-  }
-
-  // Generate service voucher sequence e.g. 02026/1921-X if not provided
-  let voucherNo = service_voucher_no;
-  if (!voucherNo) {
-    const currentYear = new Date().getFullYear();
-    const countVouchers = (db.prepare("SELECT COUNT(*) as c FROM travel_visas").get() as any)?.c || 0;
-    voucherNo = `0${currentYear}/1921-${countVouchers + 1}`;
-  }
-
-  const stmt = db.prepare(`
-    INSERT INTO travel_visas (
-      visa_number, application_number, customer_id, passenger_id, country, visa_type, status,
+  try {
+    const {
+      application_number, customer_id, passenger_id, country, visa_type, status,
       application_date, expected_travel_date, expiry_date, duration_days, cost_price, selling_price,
-      office_fees, paid_amount, remaining_balance, responsible_employee, embassy_entity, supplier_agent,
-      supplier_office_id, supplier_office_name, customer_currency, customer_statement,
+      office_fees, paid_amount, responsible_employee, embassy_entity, supplier_agent,
+      supplier_office_id, supplier_office_name,    customer_currency, customer_statement,
       supplier_currency, supplier_statement, agency_commission, commission_currency, exchange_rate,
       payment_method, payment_status,
       issued_visa_number, issue_date, rejection_reason, rejection_date, delivered_to, delivery_date, delivery_method, delivery_notes, border_number, service_voucher_no,
       checklist_passport, checklist_photos, checklist_hotel, checklist_ticket,
       checklist_bank, checklist_job_letter, checklist_insurance, checklist_extra,
       missing_docs, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+    } = req.body;
 
-  const info = stmt.run(
-    appNum, appNum, customer_id || null, passenger_id || null, country, visa_type || 'تأشيرة عمرة', status || 'under_process',
-    application_date || new Date().toISOString().slice(0, 10), expected_travel_date || null, expiry_date || null,
-    Number(duration_days || 30), cost, sell, Number(office_fees || 0), paid, rem,
-    responsible_employee || user.name, embassy_entity || null, supplier_agent || suppName || null,
-    supplier_office_id ? Number(supplier_office_id) : null, suppName || null,
-    customer_currency || 'SAR', customer_statement || null,
-    supplier_currency || 'SAR', supplier_statement || null,
-    comm, commission_currency || customer_currency || 'SAR', Number(exchange_rate || 1),
-    payMethod, payStatus,
-    issued_visa_number || null, issue_date || null, rejection_reason || null, rejection_date || null, delivered_to || null, delivery_date || null, delivery_method || null, delivery_notes || null, border_number || null, voucherNo,
-    checklist_passport ? 1 : 0, checklist_photos ? 1 : 0, checklist_hotel ? 1 : 0, checklist_ticket ? 1 : 0,
-    checklist_bank ? 1 : 0, checklist_job_letter ? 1 : 0, checklist_insurance ? 1 : 0, checklist_extra ? 1 : 0,
-    missing_docs || null, notes || null
-  );
+    const finalCountry = (country && String(country).trim()) || 'المملكة العربية السعودية';
+    const payMethod = payment_method || 'cash';
+    const cost = Number(cost_price || 0);
+    const sell = Number(selling_price || 0);
+    const paid = Number(paid_amount !== undefined ? paid_amount : (payMethod === 'credit' ? 0 : sell));
+    const rem = sell - paid;
+    const payStatus = payment_status || (paid > 0 ? (paid >= sell ? 'paid' : 'partial') : (payMethod === 'credit' ? 'unpaid' : 'paid'));
+    const appNum = application_number || `VSA-${Date.now().toString().slice(-6)}`;
+    const comm = agency_commission !== undefined && agency_commission !== "" ? Number(agency_commission) : (sell - cost);
 
-  const newVisa = db.prepare(`SELECT * FROM travel_visas WHERE id = ?`).get(info.lastInsertRowid);
+    // If supplier_office_id was passed, lookup supplier_office_name if empty
+    let suppName = supplier_office_name;
+    if (supplier_office_id && !suppName) {
+      const off: any = db.prepare("SELECT name FROM travel_partner_offices WHERE id = ?").get(supplier_office_id);
+      if (off) suppName = off.name;
+    }
+
+    // Generate service voucher sequence e.g. 02026/1921-X if not provided
+    let voucherNo = service_voucher_no;
+    if (!voucherNo) {
+      const currentYear = new Date().getFullYear();
+      const countVouchers = (db.prepare("SELECT COUNT(*) as c FROM travel_visas").get() as any)?.c || 0;
+      voucherNo = `0${currentYear}/1921-${countVouchers + 1}`;
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO travel_visas (
+        visa_number, application_number, customer_id, passenger_id, country, visa_type, status,
+        application_date, expected_travel_date, expiry_date, duration_days, cost_price, selling_price,
+        office_fees, paid_amount, remaining_balance, responsible_employee, embassy_entity, supplier_agent,
+        supplier_office_id, supplier_office_name, customer_currency, customer_statement,
+        supplier_currency, supplier_statement, agency_commission, commission_currency, exchange_rate,
+        payment_method, payment_status,
+        issued_visa_number, issue_date, rejection_reason, rejection_date, delivered_to, delivery_date, delivery_method, delivery_notes, border_number, service_voucher_no,
+        checklist_passport, checklist_photos, checklist_hotel, checklist_ticket,
+        checklist_bank, checklist_job_letter, checklist_insurance, checklist_extra,
+        missing_docs, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const info = stmt.run(
+      appNum, appNum, customer_id ? Number(customer_id) : null, passenger_id ? Number(passenger_id) : null,
+      finalCountry, visa_type || 'تأشيرة عمرة', status || 'under_process',
+      application_date || new Date().toISOString().slice(0, 10), expected_travel_date || null, expiry_date || null,
+      Number(duration_days || 30), cost, sell, Number(office_fees || 0), paid, rem,
+      responsible_employee || user.name, embassy_entity || null, supplier_agent || suppName || null,
+      supplier_office_id ? Number(supplier_office_id) : null, suppName || null,
+      customer_currency || 'SAR', customer_statement || null,
+      supplier_currency || 'SAR', supplier_statement || null,
+      comm, commission_currency || customer_currency || 'SAR', Number(exchange_rate || 1),
+      payMethod, payStatus,
+      issued_visa_number || null, issue_date || null, rejection_reason || null, rejection_date || null, delivered_to || null, delivery_date || null, delivery_method || null, delivery_notes || null, border_number || null, voucherNo,
+      checklist_passport ? 1 : 0, checklist_photos ? 1 : 0, checklist_hotel ? 1 : 0, checklist_ticket ? 1 : 0,
+      checklist_bank ? 1 : 0, checklist_job_letter ? 1 : 0, checklist_insurance ? 1 : 0, checklist_extra ? 1 : 0,
+      missing_docs || null, notes || null
+    );
+
+    const newVisa = db.prepare(`SELECT * FROM travel_visas WHERE id = ?`).get(info.lastInsertRowid);
 
   // Financial accounting journal entry
   try {
@@ -1652,66 +1657,73 @@ router.post("/travel/visas", (req, res) => {
   }
 
   res.status(201).json(newVisa);
+  } catch (err: any) {
+    console.error("Error creating visa:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.put("/travel/visas/:id", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
 
-  const {
-    customer_id, passenger_id, country, visa_type, status, application_date, expected_travel_date, expiry_date, duration_days,
-    cost_price, selling_price, office_fees, paid_amount, responsible_employee, embassy_entity, supplier_agent,
-    supplier_office_id, supplier_office_name, customer_currency, customer_statement,
-    supplier_currency, supplier_statement, agency_commission, commission_currency, exchange_rate,
-    payment_method, payment_status,
-    issued_visa_number, issue_date, rejection_reason, rejection_date, delivered_to, delivery_date, delivery_method, delivery_notes, border_number, service_voucher_no,
-    checklist_passport, checklist_photos, checklist_hotel, checklist_ticket,
-    checklist_bank, checklist_job_letter, checklist_insurance, checklist_extra,
-    missing_docs, notes
-  } = req.body;
+  try {
+    const {
+      customer_id, passenger_id, country, visa_type, status, application_date, expected_travel_date, expiry_date, duration_days,
+      cost_price, selling_price, office_fees, paid_amount, responsible_employee, embassy_entity, supplier_agent,
+      supplier_office_id, supplier_office_name, customer_currency, customer_statement,
+      supplier_currency, supplier_statement, agency_commission, commission_currency, exchange_rate,
+      payment_method, payment_status,
+      issued_visa_number, issue_date, rejection_reason, rejection_date, delivered_to, delivery_date, delivery_method, delivery_notes, border_number, service_voucher_no,
+      checklist_passport, checklist_photos, checklist_hotel, checklist_ticket,
+      checklist_bank, checklist_job_letter, checklist_insurance, checklist_extra,
+      missing_docs, notes
+    } = req.body;
 
-  const cost = Number(cost_price || 0);
-  const sell = Number(selling_price || 0);
-  const payMethod = payment_method || 'cash';
-  const paid = Number(paid_amount !== undefined ? paid_amount : (payMethod === 'credit' ? 0 : sell));
-  const rem = sell - paid;
-  const payStatus = payment_status || (paid >= sell ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'));
-  const comm = agency_commission !== undefined && agency_commission !== "" ? Number(agency_commission) : (sell - cost);
+    const finalCountry = (country && String(country).trim()) || 'المملكة العربية السعودية';
+    const cost = Number(cost_price || 0);
+    const sell = Number(selling_price || 0);
+    const payMethod = payment_method || 'cash';
+    const paid = Number(paid_amount !== undefined ? paid_amount : (payMethod === 'credit' ? 0 : sell));
+    const rem = sell - paid;
+    const payStatus = payment_status || (paid >= sell ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'));
+    const comm = agency_commission !== undefined && agency_commission !== "" ? Number(agency_commission) : (sell - cost);
 
-  let suppName = supplier_office_name;
-  if (supplier_office_id && !suppName) {
-    const off: any = db.prepare("SELECT name FROM travel_partner_offices WHERE id = ?").get(supplier_office_id);
-    if (off) suppName = off.name;
-  }
+    let suppName = supplier_office_name;
+    if (supplier_office_id && !suppName) {
+      const off: any = db.prepare("SELECT name FROM travel_partner_offices WHERE id = ?").get(supplier_office_id);
+      if (off) suppName = off.name;
+    }
 
-  db.prepare(`
-    UPDATE travel_visas SET
-      customer_id=?, passenger_id=?, country=?, visa_type=?, status=?, application_date=?, expected_travel_date=?, expiry_date=?, duration_days=?,
-      cost_price=?, selling_price=?, office_fees=?, paid_amount=?, remaining_balance=?,
-      responsible_employee=?, embassy_entity=?, supplier_agent=?,
-      supplier_office_id=?, supplier_office_name=?, customer_currency=?, customer_statement=?,
-      supplier_currency=?, supplier_statement=?, agency_commission=?, commission_currency=?, exchange_rate=?,
-      payment_method=?, payment_status=?,
-      issued_visa_number=?, issue_date=?, rejection_reason=?, rejection_date=?, delivered_to=?, delivery_date=?, delivery_method=?, delivery_notes=?, border_number=?, service_voucher_no=?,
-      checklist_passport=?, checklist_photos=?, checklist_hotel=?, checklist_ticket=?,
-      checklist_bank=?, checklist_job_letter=?, checklist_insurance=?, checklist_extra=?,
-      missing_docs=?, notes=?
-    WHERE id=?
-  `).run(
-    customer_id ? Number(customer_id) : null, passenger_id ? Number(passenger_id) : null,
-    country, visa_type, status, application_date, expected_travel_date || null, expiry_date || null, Number(duration_days || 30),
-    cost, sell, Number(office_fees || 0), paid, rem,
-    responsible_employee || user.name, embassy_entity || null, supplier_agent || suppName || null,
-    supplier_office_id ? Number(supplier_office_id) : null, suppName || null,
-    customer_currency || 'SAR', customer_statement || null,
-    supplier_currency || 'SAR', supplier_statement || null,
-    comm, commission_currency || customer_currency || 'SAR', Number(exchange_rate || 1),
-    payMethod, payStatus,
-    issued_visa_number || null, issue_date || null, rejection_reason || null, rejection_date || null, delivered_to || null, delivery_date || null, delivery_method || null, delivery_notes || null, border_number || null, service_voucher_no || null,
-    checklist_passport ? 1 : 0, checklist_photos ? 1 : 0, checklist_hotel ? 1 : 0, checklist_ticket ? 1 : 0,
-    checklist_bank ? 1 : 0, checklist_job_letter ? 1 : 0, checklist_insurance ? 1 : 0, checklist_extra ? 1 : 0,
-    missing_docs || null, notes || null, req.params.id
-  );
+    db.prepare(`
+      UPDATE travel_visas SET
+        customer_id=?, passenger_id=?, country=?, visa_type=?, status=?, application_date=?, expected_travel_date=?, expiry_date=?, duration_days=?,
+        cost_price=?, selling_price=?, office_fees=?, paid_amount=?, remaining_balance=?,
+        responsible_employee=?, embassy_entity=?, supplier_agent=?,
+        supplier_office_id=?, supplier_office_name=?, customer_currency=?, customer_statement=?,
+        supplier_currency=?, supplier_statement=?, agency_commission=?, commission_currency=?, exchange_rate=?,
+        payment_method=?, payment_status=?,
+        issued_visa_number=?, issue_date=?, rejection_reason=?, rejection_date=?, delivered_to=?, delivery_date=?, delivery_method=?, delivery_notes=?, border_number=?, service_voucher_no=?,
+        checklist_passport=?, checklist_photos=?, checklist_hotel=?, checklist_ticket=?,
+        checklist_bank=?, checklist_job_letter=?, checklist_insurance=?, checklist_extra=?,
+        missing_docs=?, notes=?
+      WHERE id=?
+    `).run(
+      customer_id ? Number(customer_id) : null, passenger_id ? Number(passenger_id) : null,
+      finalCountry, visa_type || 'تأشيرة عمرة', status || 'under_process',
+      application_date || new Date().toISOString().slice(0, 10), expected_travel_date || null, expiry_date || null, Number(duration_days || 30),
+      cost, sell, Number(office_fees || 0), paid, rem,
+      responsible_employee || user.name, embassy_entity || null, supplier_agent || suppName || null,
+      supplier_office_id ? Number(supplier_office_id) : null, suppName || null,
+      customer_currency || 'SAR', customer_statement || null,
+      supplier_currency || 'SAR', supplier_statement || null,
+      comm, commission_currency || customer_currency || 'SAR', Number(exchange_rate || 1),
+      payMethod, payStatus,
+      issued_visa_number || null, issue_date || null, rejection_reason || null, rejection_date || null, delivered_to || null, delivery_date || null, delivery_method || null, delivery_notes || null, border_number || null, service_voucher_no || null,
+      checklist_passport ? 1 : 0, checklist_photos ? 1 : 0, checklist_hotel ? 1 : 0, checklist_ticket ? 1 : 0,
+      checklist_bank ? 1 : 0, checklist_job_letter ? 1 : 0, checklist_insurance ? 1 : 0, checklist_extra ? 1 : 0,
+      missing_docs || null, notes || null, req.params.id
+    );
 
   const updated = db.prepare("SELECT * FROM travel_visas WHERE id = ?").get(req.params.id) as any;
 
@@ -1786,6 +1798,10 @@ router.put("/travel/visas/:id", (req, res) => {
   }
 
   res.json(updated);
+  } catch (err: any) {
+    console.error("Error updating visa:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Quick Action Status Update for Visas (مؤشرة، مرفوضة، مسلمة للعميل، في المكتب، قيد المعالجة)
@@ -2599,42 +2615,100 @@ router.get("/travel/hotels", (req, res) => {
   res.json(rows);
 });
 
+function ensureTravelHotelsColumns() {
+  try {
+    const cols = (db.prepare("PRAGMA table_info(travel_hotels)").all() as any[]).map(c => c.name);
+    const set = new Set(cols);
+    const required: [string, string][] = [
+      ["voucher_number", "TEXT"],
+      ["confirmation_number", "TEXT"],
+      ["hotel_db_id", "INTEGER"],
+      ["country", "TEXT"],
+      ["city", "TEXT"],
+      ["city_country", "TEXT"],
+      ["customer_name", "TEXT"],
+      ["guest_name", "TEXT"],
+      ["guest_phone", "TEXT"],
+      ["guest_passport", "TEXT"],
+      ["customer_days", "INTEGER DEFAULT 1"],
+      ["supplier_days", "INTEGER DEFAULT 1"],
+      ["customer_currency", "TEXT DEFAULT 'SAR'"],
+      ["supplier_currency", "TEXT DEFAULT 'SAR'"],
+      ["commission_currency", "TEXT DEFAULT 'SAR'"],
+      ["customer_statement", "TEXT"],
+      ["supplier_statement", "TEXT"],
+      ["commission_statement", "TEXT"],
+      ["commission", "REAL DEFAULT 0"],
+      ["profit", "REAL DEFAULT 0"],
+      ["rooms_count", "INTEGER DEFAULT 1"],
+      ["guests_count", "INTEGER DEFAULT 1"],
+      ["meal_plan", "TEXT DEFAULT 'إفطار شامل (Bed & Breakfast)'"],
+      ["payment_method", "TEXT DEFAULT 'cash'"],
+      ["payment_status", "TEXT DEFAULT 'paid'"],
+      ["paid_amount", "REAL DEFAULT 0"],
+      ["remaining_balance", "REAL DEFAULT 0"],
+      ["supplier_payment_method", "TEXT DEFAULT 'credit'"],
+      ["supplier_payment_status", "TEXT DEFAULT 'unpaid'"],
+      ["supplier_paid_amount", "REAL DEFAULT 0"],
+      ["supplier_remaining_balance", "REAL DEFAULT 0"],
+      ["supplier_office_id", "INTEGER"],
+      ["supplier_office_name", "TEXT"],
+      ["supplier_id", "INTEGER"],
+      ["supplier_name", "TEXT"],
+      ["issue_date", "TEXT"]
+    ];
+    for (const [col, colType] of required) {
+      if (!set.has(col)) {
+        try {
+          db.exec(`ALTER TABLE travel_hotels ADD COLUMN ${col} ${colType}`);
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.error("ensureTravelHotelsColumns warning:", e);
+  }
+}
+
+function formatArabicTravelError(err: any): string {
+  const msg = String(err?.message || err || "");
+  console.error("[Travel Arabic Error Handler]:", msg);
+
+  if (msg.includes("has no column named")) {
+    const match = msg.match(/has no column named (\w+)/);
+    const col = match ? match[1] : "";
+    ensureTravelHotelsColumns();
+    return `تم تحديث حقل قاعدة البيانات (${col}) تلقائياً. يرجى الضغط على حفظ مرة أخرى لإتمام العملية بنجاح.`;
+  }
+  if (msg.includes("NOT NULL constraint failed: travel_visas.country")) {
+    return "يرجى تحديد دولة وجهة التأشيرة المطلوبة.";
+  }
+  if (msg.includes("NOT NULL constraint failed")) {
+    const match = msg.match(/NOT NULL constraint failed: (\w+)\.(\w+)/);
+    const col = match ? match[2] : "";
+    const colLabels: Record<string, string> = {
+      country: "الدولة",
+      hotel_name: "اسم الفندق",
+      booking_ref: "مرجع الحجز",
+      voucher_number: "رقم الفاوتشر",
+      customer_id: "العميل",
+      name_ar: "الاسم بالعربية"
+    };
+    return `يرجى استكمال الحقل الإلزامي المطلوب: (${colLabels[col] || col})`;
+  }
+  if (msg.includes("UNIQUE constraint failed")) {
+    return "رقم المرجع أو السند مسجل مسبقاً في النظام. يرجى اختيار أو توليد رقم فريد.";
+  }
+  return "حدث خطأ أثناء حفظ بيانات الحجز الفندقي. يرجى مراجعة المدخلات والمحاولة مرة أخرى.";
+}
+
 router.post("/travel/hotels", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
 
-  const {
-    booking_ref, voucher_number, confirmation_number,
-    customer_id, customer_name, passenger_id, guest_name, guest_phone, guest_passport,
-    hotel_db_id, hotel_name, country, city, city_country,
-    check_in, check_out, room_type, nights, customer_days, supplier_days, rooms_count, guests_count, meal_plan,
-    cost_price, selling_price, commission, profit,
-    customer_currency, supplier_currency, commission_currency,
-    customer_statement, supplier_statement, commission_statement,
-    payment_method, payment_status, paid_amount, remaining_balance,
-    supplier_payment_method, supplier_payment_status, supplier_paid_amount, supplier_remaining_balance,
-    supplier_office_id, supplier_office_name, supplier_id, supplier_name,
-    status, issue_date, notes
-  } = req.body;
+  ensureTravelHotelsColumns();
 
-  const finalHotelName = hotel_name || (hotel_db_id ? `فندق #${hotel_db_id}` : "حجز فندقي عام");
-
-  const ref = booking_ref || `HTL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-  const vch = voucher_number || `VCH-${Math.floor(100000 + Math.random() * 900000)}`;
-  const cost = Number(cost_price || 0);
-  const sell = Number(selling_price || 0);
-  const comm = Number(commission !== undefined ? commission : (sell - cost));
-  const prof = Number(profit !== undefined ? profit : comm);
-  const n = Number(nights || customer_days || 1);
-  const cDays = Number(customer_days || n);
-  const sDays = Number(supplier_days || n);
-  const paid = Number(paid_amount !== undefined ? paid_amount : (payment_status === 'paid' ? sell : 0));
-  const rem = Number(remaining_balance !== undefined ? remaining_balance : (sell - paid));
-  const sPaid = Number(supplier_paid_amount !== undefined ? supplier_paid_amount : (supplier_payment_status === 'paid' ? cost : 0));
-  const sRem = Number(supplier_remaining_balance !== undefined ? supplier_remaining_balance : (cost - sPaid));
-
-  const stmt = db.prepare(`
-    INSERT INTO travel_hotels (
+  try {
+    const {
       booking_ref, voucher_number, confirmation_number,
       customer_id, customer_name, passenger_id, guest_name, guest_phone, guest_passport,
       hotel_db_id, hotel_name, country, city, city_country,
@@ -2646,188 +2720,229 @@ router.post("/travel/hotels", (req, res) => {
       supplier_payment_method, supplier_payment_status, supplier_paid_amount, supplier_remaining_balance,
       supplier_office_id, supplier_office_name, supplier_id, supplier_name,
       status, issue_date, notes
-    ) VALUES (
-      ?, ?, ?,
-      ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?,
-      ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?
-    )
-  `);
+    } = req.body;
 
-  const info = stmt.run(
-    ref, vch, confirmation_number || null,
-    customer_id || null, customer_name || null, passenger_id || null, guest_name || null, guest_phone || null, guest_passport || null,
-    hotel_db_id || null, finalHotelName, country || null, city || null, city_country || `${city || ''}, ${country || ''}`,
-    check_in || null, check_out || null, room_type || 'مزدوجة Double', n, cDays, sDays, Number(rooms_count || 1), Number(guests_count || 1), meal_plan || 'إفطار شامل (Bed & Breakfast)',
-    cost, sell, comm, prof,
-    customer_currency || 'SAR', supplier_currency || 'SAR', commission_currency || 'SAR',
-    customer_statement || null, supplier_statement || null, commission_statement || null,
-    payment_method || 'cash', payment_status || 'paid', paid, rem,
-    supplier_payment_method || 'credit', supplier_payment_status || 'unpaid', sPaid, sRem,
-    supplier_office_id || null, supplier_office_name || null, supplier_id || null, supplier_name || null,
-    status || 'confirmed', issue_date || new Date().toISOString().slice(0, 10), notes || null
-  );
+    const finalHotelName = hotel_name || (hotel_db_id ? `فندق #${hotel_db_id}` : "حجز فندقي عام");
 
-  const newHtl = db.prepare("SELECT * FROM travel_hotels WHERE id = ?").get(info.lastInsertRowid);
+    const ref = booking_ref || `HTL-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const vch = voucher_number || `VCH-${Math.floor(100000 + Math.random() * 900000)}`;
+    const cost = Number(cost_price || 0);
+    const sell = Number(selling_price || 0);
+    const comm = Number(commission !== undefined ? commission : (sell - cost));
+    const prof = Number(profit !== undefined ? profit : comm);
+    const n = Number(nights || customer_days || 1);
+    const cDays = Number(customer_days || n);
+    const sDays = Number(supplier_days || n);
+    const paid = Number(paid_amount !== undefined ? paid_amount : (payment_status === 'paid' ? sell : 0));
+    const rem = Number(remaining_balance !== undefined ? remaining_balance : (sell - paid));
+    const sPaid = Number(supplier_paid_amount !== undefined ? supplier_paid_amount : (supplier_payment_status === 'paid' ? cost : 0));
+    const sRem = Number(supplier_remaining_balance !== undefined ? supplier_remaining_balance : (cost - sPaid));
 
-  // Double entry accounting journal record
-  try {
-    const entryDate = issue_date || new Date().toISOString().slice(0, 10);
-    const desc = customer_statement || `حجز فندق ${finalHotelName} - مرجع: ${ref}`;
-    const custAcc = getCustomerAccountCode(customer_id);
-    const suppAcc = getSupplierAccountCode(supplier_office_id || supplier_id || hotel_db_id || finalHotelName);
-    const hotelBookingCur = customer_currency || supplier_currency || 'SAR';
-    const lines: any[] = [
-      { account_code: custAcc, debit: sell, credit: 0, description: `استحقاق قيمة حجز الفندق على العميل`, currency: customer_currency || hotelBookingCur },
-      { account_code: "42001", debit: 0, credit: sell, description: `ايرادات عمولة مبيعات حجوزات الفنادق`, currency: customer_currency || hotelBookingCur }
-    ];
-    if (cost > 0) {
-      lines.push(
-        { account_code: "52000", debit: cost, credit: 0, description: `تكلفة حجز الفندق`, currency: supplier_currency || hotelBookingCur },
-        { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات الفندق / المورد`, currency: supplier_currency || hotelBookingCur }
-      );
-      if (supplier_payment_method === 'cash') {
+    const stmt = db.prepare(`
+      INSERT INTO travel_hotels (
+        booking_ref, voucher_number, confirmation_number,
+        customer_id, customer_name, passenger_id, guest_name, guest_phone, guest_passport,
+        hotel_db_id, hotel_name, country, city, city_country,
+        check_in, check_out, room_type, nights, customer_days, supplier_days, rooms_count, guests_count, meal_plan,
+        cost_price, selling_price, commission, profit,
+        customer_currency, supplier_currency, commission_currency,
+        customer_statement, supplier_statement, commission_statement,
+        payment_method, payment_status, paid_amount, remaining_balance,
+        supplier_payment_method, supplier_payment_status, supplier_paid_amount, supplier_remaining_balance,
+        supplier_office_id, supplier_office_name, supplier_id, supplier_name,
+        status, issue_date, notes
+      ) VALUES (
+        ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?
+      )
+    `);
+
+    const info = stmt.run(
+      ref, vch, confirmation_number || null,
+      customer_id || null, customer_name || null, passenger_id || null, guest_name || null, guest_phone || null, guest_passport || null,
+      hotel_db_id || null, finalHotelName, country || null, city || null, city_country || `${city || ''}, ${country || ''}`,
+      check_in || null, check_out || null, room_type || 'مزدوجة Double', n, cDays, sDays, Number(rooms_count || 1), Number(guests_count || 1), meal_plan || 'إفطار شامل (Bed & Breakfast)',
+      cost, sell, comm, prof,
+      customer_currency || 'SAR', supplier_currency || 'SAR', commission_currency || 'SAR',
+      customer_statement || null, supplier_statement || null, commission_statement || null,
+      payment_method || 'cash', payment_status || 'paid', paid, rem,
+      supplier_payment_method || 'credit', supplier_payment_status || 'unpaid', sPaid, sRem,
+      supplier_office_id || null, supplier_office_name || null, supplier_id || null, supplier_name || null,
+      status || 'confirmed', issue_date || new Date().toISOString().slice(0, 10), notes || null
+    );
+
+    const newHtl = db.prepare("SELECT * FROM travel_hotels WHERE id = ?").get(info.lastInsertRowid);
+
+    // Double entry accounting journal record
+    try {
+      const entryDate = issue_date || new Date().toISOString().slice(0, 10);
+      const desc = customer_statement || `حجز فندق ${finalHotelName} - مرجع: ${ref}`;
+      const custAcc = getCustomerAccountCode(customer_id);
+      const suppAcc = getSupplierAccountCode(supplier_office_id || supplier_id || hotel_db_id || finalHotelName);
+      const hotelBookingCur = customer_currency || supplier_currency || 'SAR';
+      const lines: any[] = [
+        { account_code: custAcc, debit: sell, credit: 0, description: `استحقاق قيمة حجز الفندق على العميل`, currency: customer_currency || hotelBookingCur },
+        { account_code: "42001", debit: 0, credit: sell, description: `ايرادات عمولة مبيعات حجوزات الفنادق`, currency: customer_currency || hotelBookingCur }
+      ];
+      if (cost > 0) {
         lines.push(
-          { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي للمورد/الفندق`, currency: supplier_currency || hotelBookingCur },
-          { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق للمورد/الفندق`, currency: supplier_currency || hotelBookingCur }
+          { account_code: "52000", debit: cost, credit: 0, description: `تكلفة حجز الفندق`, currency: supplier_currency || hotelBookingCur },
+          { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات الفندق / المورد`, currency: supplier_currency || hotelBookingCur }
+        );
+        if (supplier_payment_method === 'cash') {
+          lines.push(
+            { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي للمورد/الفندق`, currency: supplier_currency || hotelBookingCur },
+            { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق للمورد/الفندق`, currency: supplier_currency || hotelBookingCur }
+          );
+        }
+      }
+      if (paid > 0) {
+        const debitAcc = payment_method === 'bank' ? '11120' : '11100';
+        lines.push(
+          { account_code: debitAcc, debit: paid, credit: 0, description: `تحصيل قيمة حجز الفندق من العميل`, currency: customer_currency || hotelBookingCur },
+          { account_code: custAcc, debit: 0, credit: paid, description: `سداد من العميل`, currency: customer_currency || hotelBookingCur }
         );
       }
+      syncJournalEntryForSource({
+        sourceType: "hotel",
+        sourceId: Number(info.lastInsertRowid),
+        entryDate,
+        description: desc,
+        lines,
+        referenceNo: ref,
+        currency: hotelBookingCur
+      });
+    } catch (err) {
+      console.error("Journal entry error on hotel creation:", err);
     }
-    if (paid > 0) {
-      const debitAcc = payment_method === 'bank' ? '11120' : '11100';
-      lines.push(
-        { account_code: debitAcc, debit: paid, credit: 0, description: `تحصيل قيمة حجز الفندق من العميل`, currency: customer_currency || hotelBookingCur },
-        { account_code: custAcc, debit: 0, credit: paid, description: `سداد من العميل`, currency: customer_currency || hotelBookingCur }
-      );
-    }
-    syncJournalEntryForSource({
-      sourceType: "hotel",
-      sourceId: Number(info.lastInsertRowid),
-      entryDate,
-      description: desc,
-      lines,
-      referenceNo: ref,
-      currency: hotelBookingCur
-    });
-  } catch (err) {
-    console.error("Journal entry error on hotel creation:", err);
-  }
 
-  res.status(201).json(newHtl);
+    res.status(201).json(newHtl);
+  } catch (err: any) {
+    res.status(400).json({ error: formatArabicTravelError(err) });
+  }
 });
 
 router.put("/travel/hotels/:id", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
 
-  const {
-    booking_ref, voucher_number, confirmation_number,
-    customer_id, customer_name, passenger_id, guest_name, guest_phone, guest_passport,
-    hotel_db_id, hotel_name, country, city, city_country,
-    check_in, check_out, room_type, nights, customer_days, supplier_days, rooms_count, guests_count, meal_plan,
-    cost_price, selling_price, commission, profit,
-    customer_currency, supplier_currency, commission_currency,
-    customer_statement, supplier_statement, commission_statement,
-    payment_method, payment_status, paid_amount, remaining_balance,
-    supplier_payment_method, supplier_payment_status, supplier_paid_amount, supplier_remaining_balance,
-    supplier_office_id, supplier_office_name, supplier_id, supplier_name,
-    status, issue_date, notes
-  } = req.body;
+  ensureTravelHotelsColumns();
 
-  const finalHotelName = hotel_name || (hotel_db_id ? `فندق #${hotel_db_id}` : "حجز فندقي عام");
-  const cost = Number(cost_price || 0);
-  const sell = Number(selling_price || 0);
-  const comm = Number(commission !== undefined ? commission : (sell - cost));
-  const prof = Number(profit !== undefined ? profit : comm);
-  const n = Number(nights || customer_days || 1);
-  const cDays = Number(customer_days || n);
-  const sDays = Number(supplier_days || n);
-  const paid = Number(paid_amount !== undefined ? paid_amount : (payment_status === 'paid' ? sell : 0));
-  const rem = Number(remaining_balance !== undefined ? remaining_balance : (sell - paid));
-  const sPaid = Number(supplier_paid_amount !== undefined ? supplier_paid_amount : (supplier_payment_status === 'paid' ? cost : 0));
-  const sRem = Number(supplier_remaining_balance !== undefined ? supplier_remaining_balance : (cost - sPaid));
-
-  db.prepare(`
-    UPDATE travel_hotels SET
-      booking_ref=?, voucher_number=?, confirmation_number=?,
-      customer_id=?, customer_name=?, passenger_id=?, guest_name=?, guest_phone=?, guest_passport=?,
-      hotel_db_id=?, hotel_name=?, country=?, city=?, city_country=?,
-      check_in=?, check_out=?, room_type=?, nights=?, customer_days=?, supplier_days=?, rooms_count=?, guests_count=?, meal_plan=?,
-      cost_price=?, selling_price=?, commission=?, profit=?,
-      customer_currency=?, supplier_currency=?, commission_currency=?,
-      customer_statement=?, supplier_statement=?, commission_statement=?,
-      payment_method=?, payment_status=?, paid_amount=?, remaining_balance=?,
-      supplier_payment_method=?, supplier_payment_status=?, supplier_paid_amount=?, supplier_remaining_balance=?,
-      supplier_office_id=?, supplier_office_name=?, supplier_id=?, supplier_name=?,
-      status=?, issue_date=?, notes=?
-    WHERE id=?
-  `).run(
-    booking_ref, voucher_number || null, confirmation_number || null,
-    customer_id || null, customer_name || null, passenger_id || null, guest_name || null, guest_phone || null, guest_passport || null,
-    hotel_db_id || null, finalHotelName, country || null, city || null, city_country || `${city || ''}, ${country || ''}`,
-    check_in || null, check_out || null, room_type || 'مزدوجة Double', n, cDays, sDays, Number(rooms_count || 1), Number(guests_count || 1), meal_plan || 'إفطار شامل (Bed & Breakfast)',
-    cost, sell, comm, prof,
-    customer_currency || 'SAR', supplier_currency || 'SAR', commission_currency || 'SAR',
-    customer_statement || null, supplier_statement || null, commission_statement || null,
-    payment_method || 'cash', payment_status || 'paid', paid, rem,
-    supplier_payment_method || 'credit', supplier_payment_status || 'unpaid', sPaid, sRem,
-    supplier_office_id || null, supplier_office_name || null, supplier_id || null, supplier_name || null,
-    status || 'confirmed', issue_date || new Date().toISOString().slice(0, 10), notes || null,
-    req.params.id
-  );
-
-  const updated = db.prepare("SELECT * FROM travel_hotels WHERE id = ?").get(req.params.id);
-
-  // Sync double entry journal on update
   try {
-    const entryDate = issue_date || new Date().toISOString().slice(0, 10);
-    const desc = customer_statement || `تعديل حجز فندق ${hotel_name || ''} - مرجع: ${booking_ref}`;
-    const custAcc = getCustomerAccountCode(customer_id);
-    const suppAcc = getSupplierAccountCode(supplier_office_id || supplier_id || hotel_db_id || hotel_name);
-    const hotelBookingCur = supplier_currency || customer_currency || 'SAR';
-    const lines: any[] = [
-      { account_code: custAcc, debit: sell, credit: 0, description: `استحقاق قيمة حجز الفندق على العميل`, currency: customer_currency || hotelBookingCur },
-      { account_code: "42001", debit: 0, credit: sell, description: `ايرادات عمولة مبيعات حجوزات الفنادق`, currency: customer_currency || hotelBookingCur }
-    ];
-    if (cost > 0) {
-      lines.push(
-        { account_code: "52000", debit: cost, credit: 0, description: `تكلفة حجز الفندق`, currency: supplier_currency || hotelBookingCur },
-        { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات الفندق / المورد`, currency: supplier_currency || hotelBookingCur }
-      );
-      if (supplier_payment_method === 'cash') {
+    const {
+      booking_ref, voucher_number, confirmation_number,
+      customer_id, customer_name, passenger_id, guest_name, guest_phone, guest_passport,
+      hotel_db_id, hotel_name, country, city, city_country,
+      check_in, check_out, room_type, nights, customer_days, supplier_days, rooms_count, guests_count, meal_plan,
+      cost_price, selling_price, commission, profit,
+      customer_currency, supplier_currency, commission_currency,
+      customer_statement, supplier_statement, commission_statement,
+      payment_method, payment_status, paid_amount, remaining_balance,
+      supplier_payment_method, supplier_payment_status, supplier_paid_amount, supplier_remaining_balance,
+      supplier_office_id, supplier_office_name, supplier_id, supplier_name,
+      status, issue_date, notes
+    } = req.body;
+
+    const finalHotelName = hotel_name || (hotel_db_id ? `فندق #${hotel_db_id}` : "حجز فندقي عام");
+
+    const cost = Number(cost_price || 0);
+    const sell = Number(selling_price || 0);
+    const comm = Number(commission !== undefined ? commission : (sell - cost));
+    const prof = Number(profit !== undefined ? profit : comm);
+    const n = Number(nights || customer_days || 1);
+    const cDays = Number(customer_days || n);
+    const sDays = Number(supplier_days || n);
+    const paid = Number(paid_amount !== undefined ? paid_amount : (payment_status === 'paid' ? sell : 0));
+    const rem = Number(remaining_balance !== undefined ? remaining_balance : (sell - paid));
+    const sPaid = Number(supplier_paid_amount !== undefined ? supplier_paid_amount : (supplier_payment_status === 'paid' ? cost : 0));
+    const sRem = Number(supplier_remaining_balance !== undefined ? supplier_remaining_balance : (cost - sPaid));
+
+    db.prepare(`
+      UPDATE travel_hotels SET
+        booking_ref=?, voucher_number=?, confirmation_number=?,
+        customer_id=?, customer_name=?, passenger_id=?, guest_name=?, guest_phone=?, guest_passport=?,
+        hotel_db_id=?, hotel_name=?, country=?, city=?, city_country=?,
+        check_in=?, check_out=?, room_type=?, nights=?, customer_days=?, supplier_days=?, rooms_count=?, guests_count=?, meal_plan=?,
+        cost_price=?, selling_price=?, commission=?, profit=?,
+        customer_currency=?, supplier_currency=?, commission_currency=?,
+        customer_statement=?, supplier_statement=?, commission_statement=?,
+        payment_method=?, payment_status=?, paid_amount=?, remaining_balance=?,
+        supplier_payment_method=?, supplier_payment_status=?, supplier_paid_amount=?, supplier_remaining_balance=?,
+        supplier_office_id=?, supplier_office_name=?, supplier_id=?, supplier_name=?,
+        status=?, issue_date=?, notes=?
+      WHERE id=?
+    `).run(
+      booking_ref, voucher_number || null, confirmation_number || null,
+      customer_id || null, customer_name || null, passenger_id || null, guest_name || null, guest_phone || null, guest_passport || null,
+      hotel_db_id || null, finalHotelName, country || null, city || null, city_country || `${city || ''}, ${country || ''}`,
+      check_in || null, check_out || null, room_type || 'مزدوجة Double', n, cDays, sDays, Number(rooms_count || 1), Number(guests_count || 1), meal_plan || 'إفطار شامل (Bed & Breakfast)',
+      cost, sell, comm, prof,
+      customer_currency || 'SAR', supplier_currency || 'SAR', commission_currency || 'SAR',
+      customer_statement || null, supplier_statement || null, commission_statement || null,
+      payment_method || 'cash', payment_status || 'paid', paid, rem,
+      supplier_payment_method || 'credit', supplier_payment_status || 'unpaid', sPaid, sRem,
+      supplier_office_id || null, supplier_office_name || null, supplier_id || null, supplier_name || null,
+      status || 'confirmed', issue_date || new Date().toISOString().slice(0, 10), notes || null,
+      req.params.id
+    );
+
+    const updated = db.prepare("SELECT * FROM travel_hotels WHERE id = ?").get(req.params.id);
+
+    // Sync double entry journal on update
+    try {
+      const entryDate = issue_date || new Date().toISOString().slice(0, 10);
+      const desc = customer_statement || `تعديل حجز فندق ${hotel_name || ''} - مرجع: ${booking_ref}`;
+      const custAcc = getCustomerAccountCode(customer_id);
+      const suppAcc = getSupplierAccountCode(supplier_office_id || supplier_id || hotel_db_id || hotel_name);
+      const hotelBookingCur = supplier_currency || customer_currency || 'SAR';
+      const lines: any[] = [
+        { account_code: custAcc, debit: sell, credit: 0, description: `استحقاق قيمة حجز الفندق على العميل`, currency: customer_currency || hotelBookingCur },
+        { account_code: "42001", debit: 0, credit: sell, description: `ايرادات عمولة مبيعات حجوزات الفنادق`, currency: customer_currency || hotelBookingCur }
+      ];
+      if (cost > 0) {
         lines.push(
-          { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي للمورد/الفندق`, currency: supplier_currency || hotelBookingCur },
-          { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق للمورد/الفندق`, currency: supplier_currency || hotelBookingCur }
+          { account_code: "52000", debit: cost, credit: 0, description: `تكلفة حجز الفندق`, currency: supplier_currency || hotelBookingCur },
+          { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات الفندق / المورد`, currency: supplier_currency || hotelBookingCur }
+        );
+        if (supplier_payment_method === 'cash') {
+          lines.push(
+            { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي للمورد/الفندق`, currency: supplier_currency || hotelBookingCur },
+            { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق للمورد/الفندق`, currency: supplier_currency || hotelBookingCur }
+          );
+        }
+      }
+      if (paid > 0) {
+        const debitAcc = payment_method === 'bank' ? '11120' : '11100';
+        lines.push(
+          { account_code: debitAcc, debit: paid, credit: 0, description: `تحصيل قيمة حجز الفندق`, currency: customer_currency || hotelBookingCur },
+          { account_code: custAcc, debit: 0, credit: paid, description: `سداد من العميل`, currency: customer_currency || hotelBookingCur }
         );
       }
+      syncJournalEntryForSource({
+        sourceType: "hotel",
+        sourceId: Number(req.params.id),
+        entryDate,
+        description: desc,
+        lines,
+        referenceNo: booking_ref,
+        currency: hotelBookingCur
+      });
+    } catch (err) {
+      console.error("Journal entry error on hotel update:", err);
     }
-    if (paid > 0) {
-      const debitAcc = payment_method === 'bank' ? '11120' : '11100';
-      lines.push(
-        { account_code: debitAcc, debit: paid, credit: 0, description: `تحصيل قيمة حجز الفندق`, currency: customer_currency || hotelBookingCur },
-        { account_code: custAcc, debit: 0, credit: paid, description: `سداد من العميل`, currency: customer_currency || hotelBookingCur }
-      );
-    }
-    syncJournalEntryForSource({
-      sourceType: "hotel",
-      sourceId: Number(req.params.id),
-      entryDate,
-      description: desc,
-      lines,
-      referenceNo: booking_ref,
-      currency: hotelBookingCur
-    });
-  } catch (err) {
-    console.error("Journal entry error on hotel update:", err);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: formatArabicTravelError(err) });
   }
-  res.json(updated);
 });
 
 router.delete("/travel/hotels/:id", (req, res) => {
@@ -2845,6 +2960,7 @@ router.delete("/travel/hotels/:id", (req, res) => {
 router.post("/travel/hotels/:id/confirm", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  ensureTravelHotelsColumns();
   try {
     const current = db.prepare("SELECT * FROM travel_hotels WHERE id = ?").get(req.params.id) as any;
     if (!current) { res.status(404).json({ error: "الحجز غير موجود" }); return; }
@@ -2854,13 +2970,14 @@ router.post("/travel/hotels/:id/confirm", (req, res) => {
     const updated = db.prepare("SELECT * FROM travel_hotels WHERE id = ?").get(req.params.id);
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatArabicTravelError(err) });
   }
 });
 
 router.post("/travel/hotels/:id/issue", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
+  ensureTravelHotelsColumns();
   try {
     const current = db.prepare("SELECT * FROM travel_hotels WHERE id = ?").get(req.params.id) as any;
     if (!current) { res.status(404).json({ error: "الحجز غير موجود" }); return; }
@@ -2873,7 +2990,7 @@ router.post("/travel/hotels/:id/issue", (req, res) => {
     const updated = db.prepare("SELECT * FROM travel_hotels WHERE id = ?").get(req.params.id);
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatArabicTravelError(err) });
   }
 });
 
