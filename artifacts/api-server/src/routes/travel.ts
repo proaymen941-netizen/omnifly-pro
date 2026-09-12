@@ -1677,21 +1677,49 @@ router.post("/travel/visas", (req, res) => {
     const suppPayMethod = supplier_payment_method || 'credit';
     const cost = Number(cost_price || 0);
     const sell = Number(selling_price || 0);
-    const paid = Number(paid_amount !== undefined ? paid_amount : (payMethod === 'credit' ? 0 : sell));
+
+    // If payment_method is credit (آجل), prevent register payment unless partial is explicitly chosen
+    let paid = Number(paid_amount !== undefined ? paid_amount : (payMethod === 'credit' ? 0 : sell));
+    if (payMethod === 'credit' && payment_status === 'unpaid') {
+      paid = 0;
+    }
     const rem = sell - paid;
     const payStatus = payment_status || (paid > 0 ? (paid >= sell ? 'paid' : 'partial') : (payMethod === 'credit' ? 'unpaid' : 'paid'));
-    const sPaid = Number(supplier_paid_amount !== undefined ? supplier_paid_amount : (suppPayMethod === 'cash' ? cost : 0));
+
+    let sPaid = Number(supplier_paid_amount !== undefined ? supplier_paid_amount : (suppPayMethod === 'cash' ? cost : 0));
+    if (suppPayMethod === 'credit' && supplier_payment_status === 'unpaid') {
+      sPaid = 0;
+    }
     const sRem = Number(supplier_remaining_balance !== undefined ? supplier_remaining_balance : (cost - sPaid));
     const sStatus = supplier_payment_status || (sPaid >= cost ? 'paid' : (sPaid > 0 ? 'partial' : 'unpaid'));
 
     const appNum = application_number || `VSA-${Date.now().toString().slice(-6)}`;
     const comm = agency_commission !== undefined && agency_commission !== "" ? Number(agency_commission) : (sell - cost);
 
-    // If supplier_office_id was passed, lookup supplier_office_name if empty
+    // Comprehensive supplier/partner office name resolution to avoid ID clashes
     let suppName = supplier_office_name;
     if (supplier_office_id && !suppName) {
+      // 1. Check travel_partner_offices
       const off: any = db.prepare("SELECT name FROM travel_partner_offices WHERE id = ?").get(supplier_office_id);
-      if (off) suppName = off.name;
+      if (off) {
+        suppName = off.name;
+      } else {
+        // 2. Check suppliers
+        const sup: any = db.prepare("SELECT name FROM suppliers WHERE id = ?").get(supplier_office_id);
+        if (sup) {
+          suppName = sup.name;
+        } else {
+          // 3. Check travel_suppliers
+          const ts: any = db.prepare("SELECT name FROM travel_suppliers WHERE id = ?").get(supplier_office_id);
+          if (ts) {
+            suppName = ts.name;
+          } else {
+            // 4. Check accounts
+            const acc: any = db.prepare("SELECT name FROM accounts WHERE id = ? OR code = ?").get(supplier_office_id, String(supplier_office_id));
+            if (acc) suppName = acc.name;
+          }
+        }
+      }
     }
 
     // Generate service voucher sequence e.g. 02026/1921-X if not provided
@@ -1743,7 +1771,7 @@ router.post("/travel/visas", (req, res) => {
     const entryDate = application_date || new Date().toISOString().slice(0, 10);
     const desc = customer_statement || `معاملة ${visa_type || 'تأشيرة'} (${payMethod === 'credit' ? 'آجل' : payMethod === 'bank' ? 'تحويل بنكي' : 'نقداً'}) - ${country || 'السعودية'}`;
     const custAcc = getCustomerAccountCode(customer_id);
-    const suppAcc = getSupplierAccountCode(supplier_office_id || supplier_agent || suppName);
+    const suppAcc = getSupplierAccountCode(suppName || supplier_agent || supplier_office_id);
     const visaCur = customer_currency || supplier_currency || 'SAR';
     const lines = buildTravelJournalLines({
       sell, cost, custPayMethod: payMethod, paid,
@@ -1803,19 +1831,48 @@ router.put("/travel/visas/:id", (req, res) => {
     const sell = Number(selling_price || 0);
     const payMethod = payment_method || 'cash';
     const suppPayMethod = supplier_payment_method || 'credit';
-    const paid = Number(paid_amount !== undefined ? paid_amount : (payMethod === 'credit' ? 0 : sell));
+
+    // If payment_method is credit (آجل), prevent register payment unless partial is explicitly chosen
+    let paid = Number(paid_amount !== undefined ? paid_amount : (payMethod === 'credit' ? 0 : sell));
+    if (payMethod === 'credit' && payment_status === 'unpaid') {
+      paid = 0;
+    }
     const rem = sell - paid;
     const payStatus = payment_status || (paid >= sell ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'));
-    const sPaid = Number(supplier_paid_amount !== undefined ? supplier_paid_amount : (suppPayMethod === 'cash' ? cost : 0));
+
+    let sPaid = Number(supplier_paid_amount !== undefined ? supplier_paid_amount : (suppPayMethod === 'cash' ? cost : 0));
+    if (suppPayMethod === 'credit' && supplier_payment_status === 'unpaid') {
+      sPaid = 0;
+    }
     const sRem = Number(supplier_remaining_balance !== undefined ? supplier_remaining_balance : (cost - sPaid));
     const sStatus = supplier_payment_status || (sPaid >= cost ? 'paid' : (sPaid > 0 ? 'partial' : 'unpaid'));
 
     const comm = agency_commission !== undefined && agency_commission !== "" ? Number(agency_commission) : (sell - cost);
 
+    // Comprehensive supplier/partner office name resolution to avoid ID clashes
     let suppName = supplier_office_name;
     if (supplier_office_id && !suppName) {
+      // 1. Check travel_partner_offices
       const off: any = db.prepare("SELECT name FROM travel_partner_offices WHERE id = ?").get(supplier_office_id);
-      if (off) suppName = off.name;
+      if (off) {
+        suppName = off.name;
+      } else {
+        // 2. Check suppliers
+        const sup: any = db.prepare("SELECT name FROM suppliers WHERE id = ?").get(supplier_office_id);
+        if (sup) {
+          suppName = sup.name;
+        } else {
+          // 3. Check travel_suppliers
+          const ts: any = db.prepare("SELECT name FROM travel_suppliers WHERE id = ?").get(supplier_office_id);
+          if (ts) {
+            suppName = ts.name;
+          } else {
+            // 4. Check accounts
+            const acc: any = db.prepare("SELECT name FROM accounts WHERE id = ? OR code = ?").get(supplier_office_id, String(supplier_office_id));
+            if (acc) suppName = acc.name;
+          }
+        }
+      }
     }
 
     db.prepare(`
@@ -1857,7 +1914,7 @@ router.put("/travel/visas/:id", (req, res) => {
     const entryDate = application_date || new Date().toISOString().slice(0, 10);
     const desc = customer_statement || `تعديل معاملة ${visa_type || 'تأشيرة'} - ${country || 'السعودية'}`;
     const custAcc = getCustomerAccountCode(customer_id);
-    const suppAcc = getSupplierAccountCode(supplier_office_id || suppName);
+    const suppAcc = getSupplierAccountCode(suppName || supplier_agent || supplier_office_id);
     const visaCur = customer_currency || supplier_currency || 'SAR';
     const lines = buildTravelJournalLines({
       sell, cost, custPayMethod: payMethod, paid,

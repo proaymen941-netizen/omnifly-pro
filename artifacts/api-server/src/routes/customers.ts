@@ -148,10 +148,38 @@ router.delete("/customers/:id", (req, res) => {
 export function getCustomerAccountCode(customerId: any): string {
   if (!customerId) return "11200";
   try {
-    const cust = db.prepare("SELECT account_code, name, affiliation_type FROM customers WHERE id = ? OR name = ?").get(customerId, String(customerId)) as any;
+    const cust = db.prepare("SELECT id, account_code, name, affiliation_type FROM customers WHERE id = ? OR name = ?").get(customerId, String(customerId)) as any;
     if (cust) {
       if (cust.account_code) return cust.account_code;
       if (cust.affiliation_type === 'agency') return "21100";
+
+      // Helper to calculate the next sub-account code under '11200'
+      const getNextSubCode = () => {
+        const rows = db.prepare("SELECT code FROM accounts WHERE code LIKE '112%' AND code != '11200'").all() as { code: string }[];
+        let maxNum = 11200;
+        for (const r of rows) {
+          const num = parseInt(r.code, 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+        return String(maxNum + 1);
+      };
+
+      // Helper to insert a new account in chart of accounts under '11200'
+      const createAccount = (name: string): string => {
+        const code = getNextSubCode();
+        db.prepare(`
+          INSERT INTO accounts (code, name, type, parent_code, balance, active, is_parent, auto_add, level)
+          VALUES (?, ?, 'asset', '11200', 0, 1, 0, 1, 3)
+        `).run(code, name);
+        return code;
+      };
+
+      const custName = cust.name || `عميل #${cust.id}`;
+      const code = createAccount(custName);
+      db.prepare("UPDATE customers SET account_code = ? WHERE id = ?").run(code, cust.id);
+      return code;
     }
     const acc = db.prepare("SELECT code FROM accounts WHERE code = ? OR id = ? OR name = ?").get(String(customerId), customerId, String(customerId)) as any;
     if (acc && acc.code) return acc.code;

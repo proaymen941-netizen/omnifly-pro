@@ -2608,11 +2608,16 @@ export default function TravelVisasPage() {
                           value={form.supplier_office_id}
                           onChange={e => {
                             const newSuppId = e.target.value;
-                            setForm(f => ({ ...f, supplier_office_id: newSuppId }));
+                            const offObj = allSuppliersAndOffices.find((o: any) => String(o.id) === newSuppId);
+                            const offName = offObj?.name || "";
+                            setForm(f => ({ 
+                              ...f, 
+                              supplier_office_id: newSuppId,
+                              supplier_office_name: offName
+                            }));
                             const cust = customers.find((c: any) => String(c.id) === form.customer_id)?.name;
                             const pax = passengers.find((p: any) => String(p.id) === form.passenger_id)?.name_ar;
-                            const off = allSuppliersAndOffices.find((o: any) => String(o.id) === newSuppId)?.name;
-                            autoGenerateStatements(cust, pax, form.visa_type, off);
+                            autoGenerateStatements(cust, pax, form.visa_type, offName);
                           }}
                           className="flex h-9 w-full rounded-md border border-emerald-300 bg-white px-2 py-1 text-xs font-bold text-emerald-950"
                         >
