@@ -164,6 +164,29 @@ export function getCustomerAccountCode(customerId: any): string {
 export function getSupplierAccountCode(supplierId: any): string {
   if (!supplierId) return "21100";
   try {
+    // Helper to calculate the next sub-account code under '21100'
+    const getNextSubCode = () => {
+      const rows = db.prepare("SELECT code FROM accounts WHERE code LIKE '211%' AND code != '21100'").all() as { code: string }[];
+      let maxNum = 21100;
+      for (const r of rows) {
+        const num = parseInt(r.code, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+      return String(maxNum + 1);
+    };
+
+    // Helper to insert a new account in chart of accounts under '21100'
+    const createAccount = (name: string): string => {
+      const code = getNextSubCode();
+      db.prepare(`
+        INSERT INTO accounts (code, name, type, parent_code, balance, active, is_parent, auto_add, level)
+        VALUES (?, ?, 'liability', '21100', 0, 1, 0, 1, 3)
+      `).run(code, name);
+      return code;
+    };
+
     // 1. If supplierId is already an account code format (e.g. 4+ digits)
     if (typeof supplierId === "string" && supplierId.length >= 4 && /^\d+$/.test(supplierId)) {
       const directCode = db.prepare("SELECT code FROM accounts WHERE code = ?").get(supplierId) as any;
@@ -171,20 +194,50 @@ export function getSupplierAccountCode(supplierId: any): string {
     }
 
     // 2. Specific supplier tables lookup FIRST by ID or name
-    const tc = db.prepare("SELECT account_code, name FROM travel_transport_companies WHERE id = ? OR name = ?").get(supplierId, String(supplierId)) as any;
-    if (tc && tc.account_code) return tc.account_code;
+    const tc = db.prepare("SELECT id, account_code, company_name, name FROM travel_transport_companies WHERE id = ? OR name = ?").get(supplierId, String(supplierId)) as any;
+    if (tc) {
+      if (tc.account_code) return tc.account_code;
+      const tcName = tc.company_name || tc.name || `شركة نقل بري #${tc.id}`;
+      const code = createAccount(tcName);
+      db.prepare("UPDATE travel_transport_companies SET account_code = ? WHERE id = ?").run(code, tc.id);
+      return code;
+    }
 
-    const ts = db.prepare("SELECT account_code, name FROM travel_suppliers WHERE id = ? OR name = ?").get(supplierId, String(supplierId)) as any;
-    if (ts && ts.account_code) return ts.account_code;
+    const ts = db.prepare("SELECT id, account_code, name FROM travel_suppliers WHERE id = ? OR name = ?").get(supplierId, String(supplierId)) as any;
+    if (ts) {
+      if (ts.account_code) return ts.account_code;
+      const tsName = ts.name || `مورد سفر #${ts.id}`;
+      const code = createAccount(tsName);
+      db.prepare("UPDATE travel_suppliers SET account_code = ? WHERE id = ?").run(code, ts.id);
+      return code;
+    }
 
-    const sup = db.prepare("SELECT account_code, name FROM suppliers WHERE id = ? OR name = ?").get(supplierId, String(supplierId)) as any;
-    if (sup && sup.account_code) return sup.account_code;
+    const sup = db.prepare("SELECT id, account_code, name FROM suppliers WHERE id = ? OR name = ?").get(supplierId, String(supplierId)) as any;
+    if (sup) {
+      if (sup.account_code) return sup.account_code;
+      const sName = sup.name || `مورد #${sup.id}`;
+      const code = createAccount(sName);
+      db.prepare("UPDATE suppliers SET account_code = ? WHERE id = ?").run(code, sup.id);
+      return code;
+    }
 
-    const h = db.prepare("SELECT account_code, name_ar, name_en FROM travel_hotels_db WHERE id = ? OR name_ar = ? OR name_en = ?").get(supplierId, String(supplierId), String(supplierId)) as any;
-    if (h && h.account_code) return h.account_code;
+    const h = db.prepare("SELECT id, account_code, name_ar, name_en FROM travel_hotels_db WHERE id = ? OR name_ar = ? OR name_en = ?").get(supplierId, String(supplierId), String(supplierId)) as any;
+    if (h) {
+      if (h.account_code) return h.account_code;
+      const hName = h.name_ar || h.name_en || `فندق #${h.id}`;
+      const code = createAccount(hName);
+      db.prepare("UPDATE travel_hotels_db SET account_code = ? WHERE id = ?").run(code, h.id);
+      return code;
+    }
 
-    const po = db.prepare("SELECT account_code, name FROM travel_partner_offices WHERE id = ? OR name = ?").get(supplierId, String(supplierId)) as any;
-    if (po && po.account_code) return po.account_code;
+    const po = db.prepare("SELECT id, account_code, name FROM travel_partner_offices WHERE id = ? OR name = ?").get(supplierId, String(supplierId)) as any;
+    if (po) {
+      if (po.account_code) return po.account_code;
+      const poName = po.name || `مكتب شركاء #${po.id}`;
+      const code = createAccount(poName);
+      db.prepare("UPDATE travel_partner_offices SET account_code = ? WHERE id = ?").run(code, po.id);
+      return code;
+    }
 
     // 3. Lookup by account name
     const accByName = db.prepare("SELECT code FROM accounts WHERE name = ?").get(String(supplierId)) as any;
@@ -193,6 +246,13 @@ export function getSupplierAccountCode(supplierId: any): string {
     // 4. Lookup by account code or ID
     const acc = db.prepare("SELECT code FROM accounts WHERE code = ? OR id = ?").get(String(supplierId), supplierId) as any;
     if (acc && acc.code) return acc.code;
+
+    // 5. Dynamic auto-creation for supplier agent string name
+    const nameStr = String(supplierId).trim();
+    if (nameStr && isNaN(Number(nameStr)) && nameStr.length > 1) {
+      const code = createAccount(nameStr);
+      return code;
+    }
   } catch (e) {
     console.error("Error in getSupplierAccountCode:", e);
   }

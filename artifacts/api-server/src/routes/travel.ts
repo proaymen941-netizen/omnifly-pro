@@ -114,6 +114,65 @@ export function buildTravelJournalLines(params: {
   return lines;
 }
 
+export function buildHotelJournalLines(params: {
+  sell: number;
+  cost: number;
+  custPayMethod: string;
+  suppPayMethod: string;
+  custAcc: string;
+  suppAcc: string;
+  revenueAcc: string;
+  expenseAcc: string;
+  custCur: string;
+  suppCur: string;
+  custStmt: string;
+  suppStmt: string;
+}): any[] {
+  const lines: any[] = [];
+  const {
+    sell, cost, custPayMethod, suppPayMethod,
+    custAcc, suppAcc, revenueAcc, expenseAcc, custCur, suppCur, custStmt, suppStmt
+  } = params;
+
+  // 1. Customer Side
+  if (sell > 0) {
+    const isCashOrBank = custPayMethod === 'cash' || custPayMethod === 'bank' || custPayMethod === 'bank_transfer' || custPayMethod === 'pos' || custPayMethod === 'cheque' || custPayMethod === 'wallet' || custPayMethod === 'نقداً' || custPayMethod === 'تحويل بنكي';
+    if (isCashOrBank) {
+      const debitAcc = (custPayMethod === 'bank' || custPayMethod === 'bank_transfer' || custPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+      lines.push(
+        { account_code: debitAcc, debit: sell, credit: 0, description: `تحصيل نقدي/بنكي فوري - ${custStmt}`, currency: custCur },
+        { account_code: revenueAcc, debit: 0, credit: sell, description: custStmt, currency: custCur }
+      );
+    } else {
+      // Credit / آجل
+      lines.push(
+        { account_code: custAcc, debit: sell, credit: 0, description: `حساب العميل (آجل) - ${custStmt}`, currency: custCur },
+        { account_code: revenueAcc, debit: 0, credit: sell, description: custStmt, currency: custCur }
+      );
+    }
+  }
+
+  // 2. Supplier Side
+  if (cost > 0) {
+    const isSuppCashOrBank = suppPayMethod === 'cash' || suppPayMethod === 'bank' || suppPayMethod === 'bank_transfer' || suppPayMethod === 'cheque' || suppPayMethod === 'wallet' || suppPayMethod === 'نقداً' || suppPayMethod === 'تحويل بنكي';
+    if (isSuppCashOrBank) {
+      const creditAcc = (suppPayMethod === 'bank' || suppPayMethod === 'bank_transfer' || suppPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+      lines.push(
+        { account_code: expenseAcc, debit: cost, credit: 0, description: suppStmt, currency: suppCur },
+        { account_code: creditAcc, debit: 0, credit: cost, description: `صرف نقدي/بنكي للمورد - ${suppStmt}`, currency: suppCur }
+      );
+    } else {
+      // Credit / آجل
+      lines.push(
+        { account_code: expenseAcc, debit: cost, credit: 0, description: suppStmt, currency: suppCur },
+        { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات المورد (آجل) - ${suppStmt}`, currency: suppCur }
+      );
+    }
+  }
+
+  return lines;
+}
+
 // ==========================================
 // 1. PASSENGERS MANAGEMENT (المسافرين)
 // ==========================================
@@ -2808,9 +2867,9 @@ router.post("/travel/hotels", (req, res) => {
       const custAcc = getCustomerAccountCode(customer_id);
       const suppAcc = getSupplierAccountCode(supplier_office_id || supplier_id || hotel_db_id || finalHotelName);
       const hotelBookingCur = customer_currency || supplier_currency || 'SAR';
-      const lines = buildTravelJournalLines({
-        sell, cost, custPayMethod: payment_method || 'cash', paid,
-        suppPayMethod: supplier_payment_method || 'credit', sPaid,
+      const lines = buildHotelJournalLines({
+        sell, cost, custPayMethod: payment_method || 'cash',
+        suppPayMethod: supplier_payment_method || 'credit',
         custAcc, suppAcc, revenueAcc: "42001", expenseAcc: "52000",
         custCur: customer_currency || hotelBookingCur, suppCur: supplier_currency || hotelBookingCur,
         custStmt: customer_statement || `حجز فندق ${finalHotelName} - مرجع: ${ref}`,
@@ -2909,9 +2968,9 @@ router.put("/travel/hotels/:id", (req, res) => {
       const custAcc = getCustomerAccountCode(customer_id);
       const suppAcc = getSupplierAccountCode(supplier_office_id || supplier_id || hotel_db_id || hotel_name);
       const hotelBookingCur = supplier_currency || customer_currency || 'SAR';
-      const lines = buildTravelJournalLines({
-        sell, cost, custPayMethod: payment_method || 'cash', paid,
-        suppPayMethod: supplier_payment_method || 'credit', sPaid,
+      const lines = buildHotelJournalLines({
+        sell, cost, custPayMethod: payment_method || 'cash',
+        suppPayMethod: supplier_payment_method || 'credit',
         custAcc, suppAcc, revenueAcc: "42001", expenseAcc: "52000",
         custCur: customer_currency || hotelBookingCur, suppCur: supplier_currency || hotelBookingCur,
         custStmt: customer_statement || `تعديل حجز فندق ${finalHotelName} - مرجع: ${booking_ref}`,

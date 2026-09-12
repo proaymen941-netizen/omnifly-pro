@@ -312,15 +312,24 @@ export default function TravelHotelsPage() {
   const handleSellingPriceChange = (val: string) => {
     const sell = Number(val || 0);
     setForm(f => {
-      const paid = Number(f.paid_amount || 0);
-      let status = "unpaid";
-      if (paid >= sell && sell > 0) {
-        status = "paid";
-      } else if (paid > 0) {
-        status = "partial";
+      const isCash = f.payment_method === 'cash' || f.payment_method === 'bank_transfer' || f.payment_method === 'pos' || f.payment_method === 'cheque' || f.payment_method === 'wallet' || f.payment_method === 'نقداً';
+      if (isCash) {
+        return {
+          ...f,
+          selling_price: val,
+          paid_amount: val,
+          payment_status: "paid",
+          remaining_balance: "0"
+        };
+      } else {
+        return {
+          ...f,
+          selling_price: val,
+          paid_amount: "0",
+          payment_status: "unpaid",
+          remaining_balance: val
+        };
       }
-      const rem = String(Math.max(0, sell - paid));
-      return { ...f, selling_price: val, payment_status: status, remaining_balance: rem };
     });
   };
 
@@ -340,15 +349,24 @@ export default function TravelHotelsPage() {
   const handleCostPriceChange = (val: string) => {
     const cost = Number(val || 0);
     setForm(f => {
-      const paid = Number(f.supplier_paid_amount || 0);
-      let status = "unpaid";
-      if (paid >= cost && cost > 0) {
-        status = "paid";
-      } else if (paid > 0) {
-        status = "partial";
+      const isCash = f.supplier_payment_method === 'cash' || f.supplier_payment_method === 'bank_transfer' || f.supplier_payment_method === 'cheque' || f.supplier_payment_method === 'wallet' || f.supplier_payment_method === 'نقداً';
+      if (isCash) {
+        return {
+          ...f,
+          cost_price: val,
+          supplier_paid_amount: val,
+          supplier_payment_status: "paid",
+          supplier_remaining_balance: "0"
+        };
+      } else {
+        return {
+          ...f,
+          cost_price: val,
+          supplier_paid_amount: "0",
+          supplier_payment_status: "unpaid",
+          supplier_remaining_balance: val
+        };
       }
-      const rem = String(Math.max(0, cost - paid));
-      return { ...f, cost_price: val, supplier_payment_status: status, supplier_remaining_balance: rem };
     });
   };
 
@@ -1369,7 +1387,28 @@ export default function TravelHotelsPage() {
                           <label className="text-[11px] font-bold text-slate-700 mb-0.5 block">طريقة الدفع *</label>
                           <select
                             value={form.payment_method}
-                            onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))}
+                            onChange={e => {
+                              const method = e.target.value;
+                              const sell = form.selling_price || "0";
+                              const isCash = method === 'cash' || method === 'bank_transfer' || method === 'pos' || method === 'cheque' || method === 'wallet' || method === 'نقداً';
+                              if (isCash) {
+                                setForm(f => ({
+                                  ...f,
+                                  payment_method: method,
+                                  paid_amount: sell,
+                                  payment_status: "paid",
+                                  remaining_balance: "0"
+                                }));
+                              } else {
+                                setForm(f => ({
+                                  ...f,
+                                  payment_method: method,
+                                  paid_amount: "0",
+                                  payment_status: "unpaid",
+                                  remaining_balance: sell
+                                }));
+                              }
+                            }}
                             className="flex h-8 w-full rounded-md border border-input bg-background px-1.5 py-0.5 text-[11px] font-medium"
                           >
                             {PAYMENT_METHODS.map(pm => (
@@ -1541,7 +1580,28 @@ export default function TravelHotelsPage() {
                           <label className="text-[11px] font-bold text-slate-700 mb-0.5 block">طريقة السداد *</label>
                           <select
                             value={form.supplier_payment_method}
-                            onChange={e => setForm(f => ({ ...f, supplier_payment_method: e.target.value }))}
+                            onChange={e => {
+                              const method = e.target.value;
+                              const cost = form.cost_price || "0";
+                              const isCash = method === 'cash' || method === 'bank_transfer' || method === 'cheque' || method === 'wallet' || method === 'نقداً';
+                              if (isCash) {
+                                setForm(f => ({
+                                  ...f,
+                                  supplier_payment_method: method,
+                                  supplier_paid_amount: cost,
+                                  supplier_payment_status: "paid",
+                                  supplier_remaining_balance: "0"
+                                }));
+                              } else {
+                                setForm(f => ({
+                                  ...f,
+                                  supplier_payment_method: method,
+                                  supplier_paid_amount: "0",
+                                  supplier_payment_status: "unpaid",
+                                  supplier_remaining_balance: cost
+                                }));
+                              }
+                            }}
                             className="flex h-8 w-full rounded-md border border-input bg-background px-1.5 py-0.5 text-[11px] font-medium"
                           >
                             {SUPPLIER_PAYMENT_METHODS.map(pm => (
