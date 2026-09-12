@@ -356,12 +356,16 @@ export default function TravelVisasPage() {
     tax_amount: "0",
 
     // الطرف الثاني: المكتب المفوض للتأشيرة (الدائن / المورد)
-    affiliation_type: "direct", // "direct" or "agency"
+    affiliation_type: "agency", // "direct" or "agency"
     supplier_office_id: "",
     supplier_office_name: "",
     cost_price: "0",
     supplier_currency: "SAR",
     supplier_statement: "",
+    supplier_payment_method: "credit", // 'cash' | 'credit'
+    supplier_payment_status: "unpaid",
+    supplier_paid_amount: "0",
+    supplier_remaining_balance: "0",
 
     // عمولة المكتب الخاص بنا والربح
     agency_commission: "0",
@@ -2581,9 +2585,14 @@ export default function TravelVisasPage() {
                 {/* الطرف الثاني: المورد/المكتب */}
                 <div className="p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50/40 space-y-4 flex flex-col justify-between">
                   <div>
-                    <h3 className="font-bold text-emerald-900 text-sm flex items-center gap-2 border-b border-emerald-200 pb-2 mb-3">
-                      <Building2 className="w-5 h-5 text-emerald-600" />
-                      الطرف الثاني: بيانات المكتب المفوض والتكلفة (Supplier/Agent)
+                    <h3 className="font-bold text-emerald-900 text-sm flex items-center justify-between border-b border-emerald-200 pb-2 mb-3">
+                      <span className="flex items-center gap-2">
+                        <Building2 className="w-5 h-5 text-emerald-600" />
+                        الطرف الثاني: بيانات المكتب المفوض والتكلفة (Supplier/Agent)
+                      </span>
+                      <button type="button" onClick={() => setQuickOfficeModalOpen(true)} className="text-xs text-emerald-700 bg-white border border-emerald-300 rounded px-2 py-0.5 hover:bg-emerald-100">
+                        + مكتب/مورد جديد
+                      </button>
                     </h3>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
@@ -2594,37 +2603,35 @@ export default function TravelVisasPage() {
                           onChange={e => setForm(f => ({ ...f, affiliation_type: e.target.value }))}
                           className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold text-emerald-900"
                         >
+                          <option value="agency">عبر مكتب مفوض (وكيل / مورد)</option>
                           <option value="direct">مباشر للسفارة (بدون مكتب وسيط)</option>
-                          <option value="agency">عبر مكتب مفوض (وكيل)</option>
                         </select>
                       </div>
 
-                      {form.affiliation_type === 'agency' && (
-                        <div className="space-y-1">
-                          <label className="text-[11px] font-bold text-slate-700">المكتب المفوض المورد *</label>
-                          <select
-                            required={form.affiliation_type === 'agency'}
-                            value={form.supplier_office_id}
-                            onChange={e => {
-                              const newSuppId = e.target.value;
-                              setForm(f => ({ ...f, supplier_office_id: newSuppId }));
-                              const cust = customers.find((c: any) => String(c.id) === form.customer_id)?.name;
-                              const pax = passengers.find((p: any) => String(p.id) === form.passenger_id)?.name_ar;
-                              const off = allSuppliersAndOffices.find((o: any) => String(o.id) === newSuppId)?.name;
-                              autoGenerateStatements(cust, pax, form.visa_type, off);
-                            }}
-                            className="flex h-9 w-full rounded-md border border-input bg-white px-2 py-1 text-xs font-bold"
-                          >
-                            <option value="">-- اختر المكتب أو المورد --</option>
-                            {allSuppliersAndOffices.map((o: any, idx: number) => (
-                              <option key={`v-supp-${o.id || idx}-${idx}`} value={o.id}>{o.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-700">المكتب المفوض / المورد (دليل الحسابات) *</label>
+                        <select
+                          required
+                          value={form.supplier_office_id}
+                          onChange={e => {
+                            const newSuppId = e.target.value;
+                            setForm(f => ({ ...f, supplier_office_id: newSuppId }));
+                            const cust = customers.find((c: any) => String(c.id) === form.customer_id)?.name;
+                            const pax = passengers.find((p: any) => String(p.id) === form.passenger_id)?.name_ar;
+                            const off = allSuppliersAndOffices.find((o: any) => String(o.id) === newSuppId)?.name;
+                            autoGenerateStatements(cust, pax, form.visa_type, off);
+                          }}
+                          className="flex h-9 w-full rounded-md border border-emerald-300 bg-white px-2 py-1 text-xs font-bold text-emerald-950"
+                        >
+                          <option value="">-- اختر المكتب أو المورد --</option>
+                          {allSuppliersAndOffices.map((o: any, idx: number) => (
+                            <option key={`v-supp-${o.id || idx}-${idx}`} value={o.id}>{o.name}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                       <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-700">تكلفة التأشيرة (Cost) *</label>
                         <Input
@@ -2648,6 +2655,18 @@ export default function TravelVisasPage() {
                           {CURRENCIES.map(c => (
                             <option key={c.code} value={c.code}>{c.flag} {c.label}</option>
                           ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-slate-700">طريقة سداد المورد *</label>
+                        <select
+                          required
+                          value={form.supplier_payment_method}
+                          onChange={e => setForm(f => ({ ...f, supplier_payment_method: e.target.value }))}
+                          className="flex h-9 w-full rounded-md border border-emerald-300 bg-white px-2 text-xs font-bold text-emerald-900"
+                        >
+                          <option value="credit">آجل على حساب المورد (Credit)</option>
+                          <option value="cash">نقداً من الصندوق (Cash)</option>
                         </select>
                       </div>
                     </div>

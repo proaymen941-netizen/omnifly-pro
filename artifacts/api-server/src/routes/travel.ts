@@ -1545,9 +1545,10 @@ router.post("/travel/visas", (req, res) => {
       application_number, customer_id, passenger_id, country, visa_type, status,
       application_date, expected_travel_date, expiry_date, duration_days, cost_price, selling_price,
       office_fees, paid_amount, responsible_employee, embassy_entity, supplier_agent,
-      supplier_office_id, supplier_office_name,    customer_currency, customer_statement,
+      supplier_office_id, supplier_office_name, customer_currency, customer_statement,
       supplier_currency, supplier_statement, agency_commission, commission_currency, exchange_rate,
       payment_method, payment_status,
+      supplier_payment_method, supplier_payment_status, supplier_paid_amount, supplier_remaining_balance,
       issued_visa_number, issue_date, rejection_reason, rejection_date, delivered_to, delivery_date, delivery_method, delivery_notes, border_number, service_voucher_no,
       checklist_passport, checklist_photos, checklist_hotel, checklist_ticket,
       checklist_bank, checklist_job_letter, checklist_insurance, checklist_extra,
@@ -1556,11 +1557,16 @@ router.post("/travel/visas", (req, res) => {
 
     const finalCountry = (country && String(country).trim()) || 'المملكة العربية السعودية';
     const payMethod = payment_method || 'cash';
+    const suppPayMethod = supplier_payment_method || 'credit';
     const cost = Number(cost_price || 0);
     const sell = Number(selling_price || 0);
     const paid = Number(paid_amount !== undefined ? paid_amount : (payMethod === 'credit' ? 0 : sell));
     const rem = sell - paid;
     const payStatus = payment_status || (paid > 0 ? (paid >= sell ? 'paid' : 'partial') : (payMethod === 'credit' ? 'unpaid' : 'paid'));
+    const sPaid = Number(supplier_paid_amount !== undefined ? supplier_paid_amount : (suppPayMethod === 'cash' ? cost : 0));
+    const sRem = Number(supplier_remaining_balance !== undefined ? supplier_remaining_balance : (cost - sPaid));
+    const sStatus = supplier_payment_status || (sPaid >= cost ? 'paid' : (sPaid > 0 ? 'partial' : 'unpaid'));
+
     const appNum = application_number || `VSA-${Date.now().toString().slice(-6)}`;
     const comm = agency_commission !== undefined && agency_commission !== "" ? Number(agency_commission) : (sell - cost);
 
@@ -1587,11 +1593,12 @@ router.post("/travel/visas", (req, res) => {
         supplier_office_id, supplier_office_name, customer_currency, customer_statement,
         supplier_currency, supplier_statement, agency_commission, commission_currency, exchange_rate,
         payment_method, payment_status,
+        supplier_payment_method, supplier_payment_status, supplier_paid_amount, supplier_remaining_balance,
         issued_visa_number, issue_date, rejection_reason, rejection_date, delivered_to, delivery_date, delivery_method, delivery_notes, border_number, service_voucher_no,
         checklist_passport, checklist_photos, checklist_hotel, checklist_ticket,
         checklist_bank, checklist_job_letter, checklist_insurance, checklist_extra,
         missing_docs, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const info = stmt.run(
@@ -1605,6 +1612,7 @@ router.post("/travel/visas", (req, res) => {
       supplier_currency || 'SAR', supplier_statement || null,
       comm, commission_currency || customer_currency || 'SAR', Number(exchange_rate || 1),
       payMethod, payStatus,
+      suppPayMethod, sStatus, sPaid, sRem,
       issued_visa_number || null, issue_date || null, rejection_reason || null, rejection_date || null, delivered_to || null, delivery_date || null, delivery_method || null, delivery_notes || null, border_number || null, voucherNo,
       checklist_passport ? 1 : 0, checklist_photos ? 1 : 0, checklist_hotel ? 1 : 0, checklist_ticket ? 1 : 0,
       checklist_bank ? 1 : 0, checklist_job_letter ? 1 : 0, checklist_insurance ? 1 : 0, checklist_extra ? 1 : 0,
@@ -1629,7 +1637,7 @@ router.post("/travel/visas", (req, res) => {
         { account_code: "53000", debit: cost, credit: 0, description: `تكلفة ورسوم القنصلية / التأشيرة`, currency: supplier_currency || visaCur },
         { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات مكتب التأشيرات / المورد`, currency: supplier_currency || visaCur }
       );
-      if (req.body.supplier_payment_method === 'cash') {
+      if (suppPayMethod === 'cash') {
         lines.push(
           { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي لمكتب التأشيرات/المورد`, currency: supplier_currency || visaCur },
           { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق لمكتب التأشيرات/المورد`, currency: supplier_currency || visaCur }
@@ -1674,6 +1682,7 @@ router.put("/travel/visas/:id", (req, res) => {
       supplier_office_id, supplier_office_name, customer_currency, customer_statement,
       supplier_currency, supplier_statement, agency_commission, commission_currency, exchange_rate,
       payment_method, payment_status,
+      supplier_payment_method, supplier_payment_status, supplier_paid_amount, supplier_remaining_balance,
       issued_visa_number, issue_date, rejection_reason, rejection_date, delivered_to, delivery_date, delivery_method, delivery_notes, border_number, service_voucher_no,
       checklist_passport, checklist_photos, checklist_hotel, checklist_ticket,
       checklist_bank, checklist_job_letter, checklist_insurance, checklist_extra,
@@ -1684,9 +1693,14 @@ router.put("/travel/visas/:id", (req, res) => {
     const cost = Number(cost_price || 0);
     const sell = Number(selling_price || 0);
     const payMethod = payment_method || 'cash';
+    const suppPayMethod = supplier_payment_method || 'credit';
     const paid = Number(paid_amount !== undefined ? paid_amount : (payMethod === 'credit' ? 0 : sell));
     const rem = sell - paid;
     const payStatus = payment_status || (paid >= sell ? 'paid' : (paid > 0 ? 'partial' : 'unpaid'));
+    const sPaid = Number(supplier_paid_amount !== undefined ? supplier_paid_amount : (suppPayMethod === 'cash' ? cost : 0));
+    const sRem = Number(supplier_remaining_balance !== undefined ? supplier_remaining_balance : (cost - sPaid));
+    const sStatus = supplier_payment_status || (sPaid >= cost ? 'paid' : (sPaid > 0 ? 'partial' : 'unpaid'));
+
     const comm = agency_commission !== undefined && agency_commission !== "" ? Number(agency_commission) : (sell - cost);
 
     let suppName = supplier_office_name;
@@ -1703,6 +1717,7 @@ router.put("/travel/visas/:id", (req, res) => {
         supplier_office_id=?, supplier_office_name=?, customer_currency=?, customer_statement=?,
         supplier_currency=?, supplier_statement=?, agency_commission=?, commission_currency=?, exchange_rate=?,
         payment_method=?, payment_status=?,
+        supplier_payment_method=?, supplier_payment_status=?, supplier_paid_amount=?, supplier_remaining_balance=?,
         issued_visa_number=?, issue_date=?, rejection_reason=?, rejection_date=?, delivered_to=?, delivery_date=?, delivery_method=?, delivery_notes=?, border_number=?, service_voucher_no=?,
         checklist_passport=?, checklist_photos=?, checklist_hotel=?, checklist_ticket=?,
         checklist_bank=?, checklist_job_letter=?, checklist_insurance=?, checklist_extra=?,
@@ -1719,6 +1734,7 @@ router.put("/travel/visas/:id", (req, res) => {
       supplier_currency || 'SAR', supplier_statement || null,
       comm, commission_currency || customer_currency || 'SAR', Number(exchange_rate || 1),
       payMethod, payStatus,
+      suppPayMethod, sStatus, sPaid, sRem,
       issued_visa_number || null, issue_date || null, rejection_reason || null, rejection_date || null, delivered_to || null, delivery_date || null, delivery_method || null, delivery_notes || null, border_number || null, service_voucher_no || null,
       checklist_passport ? 1 : 0, checklist_photos ? 1 : 0, checklist_hotel ? 1 : 0, checklist_ticket ? 1 : 0,
       checklist_bank ? 1 : 0, checklist_job_letter ? 1 : 0, checklist_insurance ? 1 : 0, checklist_extra ? 1 : 0,
@@ -1743,7 +1759,7 @@ router.put("/travel/visas/:id", (req, res) => {
         { account_code: "53000", debit: cost, credit: 0, description: `تكلفة ورسوم القنصلية / التأشيرة`, currency: supplier_currency || visaCur },
         { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات مكتب التأشيرات / المورد`, currency: supplier_currency || visaCur }
       );
-      if (req.body.supplier_payment_method === 'cash') {
+      if (suppPayMethod === 'cash') {
         lines.push(
           { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي لمكتب التأشيرات/المورد`, currency: supplier_currency || visaCur },
           { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق لمكتب التأشيرات/المورد`, currency: supplier_currency || visaCur }
