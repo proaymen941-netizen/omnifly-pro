@@ -158,6 +158,7 @@ export function buildHotelJournalLines(params: {
   cost: number;
   custPayMethod: string;
   suppPayMethod: string;
+  isSuppPaidCash: boolean; // Add this
   custAcc: string;
   suppAcc: string;
   revenueAcc: string;
@@ -169,7 +170,7 @@ export function buildHotelJournalLines(params: {
 }): any[] {
   const lines: any[] = [];
   const {
-    sell, cost, custPayMethod, suppPayMethod,
+    sell, cost, custPayMethod, suppPayMethod, isSuppPaidCash,
     custAcc, suppAcc, revenueAcc, expenseAcc, custCur, suppCur, custStmt, suppStmt
   } = params;
 
@@ -193,8 +194,7 @@ export function buildHotelJournalLines(params: {
 
   // 2. Supplier Side
   if (cost > 0) {
-    const isSuppCashOrBank = isCashOrBankMethod(suppPayMethod);
-    if (isSuppCashOrBank) {
+    if (isSuppPaidCash) { // Use explicit parameter
       const creditAcc = isBankMethod(suppPayMethod) ? '11120' : '11100';
       lines.push(
         { account_code: expenseAcc, debit: cost, credit: 0, description: suppStmt, currency: suppCur },
@@ -2966,6 +2966,7 @@ router.post("/travel/hotels", (req, res) => {
       const lines = buildHotelJournalLines({
         sell, cost, custPayMethod: payment_method || 'cash',
         suppPayMethod: supplier_payment_method || 'credit',
+        isSuppPaidCash: isCashOrBankMethod(supplier_payment_method || 'credit'),
         custAcc, suppAcc, revenueAcc: "42001", expenseAcc: "52000",
         custCur: customer_currency || hotelBookingCur, suppCur: supplier_currency || hotelBookingCur,
         custStmt: customer_statement || `حجز فندق ${finalHotelName} - مرجع: ${ref}`,
@@ -3067,6 +3068,7 @@ router.put("/travel/hotels/:id", (req, res) => {
       const lines = buildHotelJournalLines({
         sell, cost, custPayMethod: payment_method || 'cash',
         suppPayMethod: supplier_payment_method || 'credit',
+        isSuppPaidCash: isCashOrBankMethod(supplier_payment_method || 'credit'),
         custAcc, suppAcc, revenueAcc: "42001", expenseAcc: "52000",
         custCur: customer_currency || hotelBookingCur, suppCur: supplier_currency || hotelBookingCur,
         custStmt: customer_statement || `تعديل حجز فندق ${finalHotelName} - مرجع: ${booking_ref}`,
