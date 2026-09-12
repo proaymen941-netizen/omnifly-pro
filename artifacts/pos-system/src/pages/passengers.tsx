@@ -1503,7 +1503,7 @@ export default function PassengersPage() {
 
         {/* 1. ADD / EDIT PASSENGER MODAL WITH REAL-TIME STAY CALCULATION */}
         <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" dir="rtl">
+          <DialogContent className="max-w-5xl lg:max-w-6xl max-h-[90vh] overflow-y-auto" dir="rtl">
             <DialogHeader>
               <DialogTitle className="text-xl font-black text-slate-900 flex items-center gap-2">
                 <Luggage className="w-5 h-5 text-primary" />
@@ -1514,214 +1514,220 @@ export default function PassengersPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-5 py-2">
-              {/* Client & Visa Type */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
-                <div>
-                  <label className="text-xs font-black text-slate-700 mb-1.5 block">العميل / الوكيل التابع له</label>
-                  <select
-                    value={form.customer_id}
-                    onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
-                    className="w-full h-10 px-3 rounded-md border border-slate-300 text-xs font-bold bg-white text-slate-800 focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="">اختر العميل من دليل الحسابات (افتراضي: محمد اليمني)</option>
-                    {allCustomerOptions.map((c: any) => (
-                      <option key={c.id} value={c.id}>{c.label || c.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-black text-slate-700 mb-1.5 block">نوع التأشيرة</label>
-                  <select
-                    value={form.visa_type}
-                    onChange={(e) => setForm({ ...form, visa_type: e.target.value })}
-                    className="w-full h-10 px-3 rounded-md border border-slate-300 text-xs font-bold bg-white text-slate-800 focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="تأشيرة عمره">تأشيرة عمره (متابعة أيام مكة)</option>
-                    <option value="تأشيرة سياحية">تأشيرة سياحية</option>
-                    <option value="تأشيرة زيارة">تأشيرة زيارة</option>
-                    <option value="تأشيرة عمل">تأشيرة عمل</option>
-                    <option value="تأشيرة علاجية">تأشيرة علاجية</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* CORE STAY & MONITORING SECTION (مدة البرنامج وتاريخ السفر والاحتساب التفاعلي) */}
-              <div className="bg-emerald-50/60 p-4 rounded-xl border-2 border-emerald-200 space-y-4">
-                <div className="flex items-center justify-between border-b border-emerald-200 pb-2">
-                  <span className="text-sm font-black text-emerald-900 flex items-center gap-2">
-                    <ShieldAlert className="w-4 h-4 text-emerald-700" />
-                    بيانات الرقابة والمدة داخل مكة المكرمة
-                  </span>
-                  <span className="text-[11px] bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
-                    احتساب فوري مباشر
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Field 1: مدة البرنامج بالأيام (يدوي) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 py-2">
+              {/* Right Column: Program details & Live Calculation */}
+              <div className="space-y-5">
+                {/* Client & Visa Type */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
                   <div>
-                    <label className="text-xs font-black text-emerald-950 mb-1 flex items-center justify-between">
-                      <span>مدة البرنامج (بالأيام يدوي) *</span>
-                      <span className="text-[10px] text-emerald-700 font-bold">أدخل الأيام يدوياً</span>
-                    </label>
-                    <div className="relative">
-                      <Input
-                        type="number"
-                        placeholder="مثال: 90 أو 86 أو 85"
-                        value={form.program_duration_days}
-                        onChange={(e) => setForm({ ...form, program_duration_days: e.target.value })}
-                        className="font-bold text-base h-11 border-emerald-300 bg-white focus:border-emerald-500 focus:ring-emerald-200"
-                        min="1"
-                        max="365"
-                      />
-                      <span className="absolute left-3 top-3 text-xs font-bold text-slate-400">يوم</span>
-                    </div>
-
-                    {/* Quick Selection Buttons */}
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <span className="text-[10px] text-slate-500 font-bold">اختيار سريع:</span>
-                      {["86", "90", "85", "30", "15"].map((d) => (
-                        <button
-                          key={d}
-                          type="button"
-                          onClick={() => setForm({ ...form, program_duration_days: d })}
-                          className={`text-[11px] px-2 py-0.5 rounded border font-bold transition-colors ${
-                            form.program_duration_days === d
-                              ? "bg-emerald-700 text-white border-emerald-800 shadow-xs"
-                              : "bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-100"
-                          }`}
-                        >
-                          {d} يوم
-                        </button>
+                    <label className="text-xs font-black text-slate-700 mb-1.5 block">العميل / الوكيل التابع له</label>
+                    <select
+                      value={form.customer_id}
+                      onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
+                      className="w-full h-10 px-3 rounded-md border border-slate-300 text-xs font-bold bg-white text-slate-800 focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="">اختر العميل من دليل الحسابات (افتراضي: محمد اليمني)</option>
+                      {allCustomerOptions.map((c: any) => (
+                        <option key={c.id} value={c.id}>{c.label || c.name}</option>
                       ))}
-                    </div>
+                    </select>
                   </div>
 
-                  {/* Field 2: تاريخ السفر (تاريخ الدخول) */}
                   <div>
-                    <label className="text-xs font-black text-emerald-950 mb-1 flex items-center justify-between">
-                      <span>تاريخ السفر (تاريخ الدخول) *</span>
-                      <span className="text-[10px] text-emerald-700 font-bold">تاريخ الوصول إلى مكة</span>
-                    </label>
+                    <label className="text-xs font-black text-slate-700 mb-1.5 block">نوع التأشيرة</label>
+                    <select
+                      value={form.visa_type}
+                      onChange={(e) => setForm({ ...form, visa_type: e.target.value })}
+                      className="w-full h-10 px-3 rounded-md border border-slate-300 text-xs font-bold bg-white text-slate-800 focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="تأشيرة عمره">تأشيرة عمره (متابعة أيام مكة)</option>
+                      <option value="تأشيرة سياحية">تأشيرة سياحية</option>
+                      <option value="تأشيرة زيارة">تأشيرة زيارة</option>
+                      <option value="تأشيرة عمل">تأشيرة عمل</option>
+                      <option value="تأشيرة علاجية">تأشيرة علاجية</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* CORE STAY & MONITORING SECTION (مدة البرنامج وتاريخ السفر والاحتساب التفاعلي) */}
+                <div className="bg-emerald-50/60 p-4 rounded-xl border-2 border-emerald-200 space-y-4">
+                  <div className="flex items-center justify-between border-b border-emerald-200 pb-2">
+                    <span className="text-sm font-black text-emerald-900 flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4 text-emerald-700" />
+                      بيانات الرقابة والمدة داخل مكة المكرمة
+                    </span>
+                    <span className="text-[11px] bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
+                      احتساب فوري مباشر
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Field 1: مدة البرنامج بالأيام (يدوي) */}
+                    <div>
+                      <label className="text-xs font-black text-emerald-950 mb-1 flex items-center justify-between">
+                        <span>مدة البرنامج (بالأيام يدوي) *</span>
+                        <span className="text-[10px] text-emerald-700 font-bold">أدخل الأيام يدوياً</span>
+                      </label>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          placeholder="مثال: 90 أو 86 أو 85"
+                          value={form.program_duration_days}
+                          onChange={(e) => setForm({ ...form, program_duration_days: e.target.value })}
+                          className="font-bold text-base h-11 border-emerald-300 bg-white focus:border-emerald-500 focus:ring-emerald-200"
+                          min="1"
+                          max="365"
+                        />
+                        <span className="absolute left-3 top-3 text-xs font-bold text-slate-400">يوم</span>
+                      </div>
+
+                      {/* Quick Selection Buttons */}
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <span className="text-[10px] text-slate-500 font-bold">اختيار سريع:</span>
+                        {["86", "90", "85", "30", "15"].map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setForm({ ...form, program_duration_days: d })}
+                            className={`text-[11px] px-2 py-0.5 rounded border font-bold transition-colors ${
+                              form.program_duration_days === d
+                                ? "bg-emerald-700 text-white border-emerald-800 shadow-xs"
+                                : "bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-100"
+                            }`}
+                          >
+                            {d} يوم
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Field 2: تاريخ السفر (تاريخ الدخول) */}
+                    <div>
+                      <label className="text-xs font-black text-emerald-950 mb-1 flex items-center justify-between">
+                        <span>تاريخ السفر (تاريخ الدخول) *</span>
+                        <span className="text-[10px] text-emerald-700 font-bold">تاريخ الوصول إلى مكة</span>
+                      </label>
+                      <Input
+                        type="date"
+                        value={form.travel_date}
+                        onChange={(e) => setForm({ ...form, travel_date: e.target.value })}
+                        className="font-bold text-base h-11 border-emerald-300 bg-white focus:border-emerald-500 focus:ring-emerald-200"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">تاريخ دخول المعتمر الفعلي</p>
+                    </div>
+                  </div>
+
+                  {/* Live Calculated Results Box */}
+                  {form.travel_date && form.program_duration_days && (
+                    <div className="bg-white p-3.5 rounded-lg border border-emerald-300 shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-slate-50 p-2.5 rounded border border-slate-200 text-center">
+                        <span className="text-[10px] font-bold text-slate-500 block">تاريخ الخروج المتوقع</span>
+                        <span className="text-base font-black text-slate-900 font-mono block mt-0.5">
+                          {liveExitDate.replace(/-/g, "/") || "---"}
+                        </span>
+                      </div>
+
+                      <div className={`p-2.5 rounded border text-center ${
+                        liveRemainingDays !== null && liveRemainingDays <= 3 
+                          ? "bg-red-50 border-red-300 text-red-800" 
+                          : liveRemainingDays !== null && liveRemainingDays <= 10
+                          ? "bg-amber-50 border-amber-300 text-amber-800"
+                          : "bg-emerald-50 border-emerald-300 text-emerald-800"
+                      }`}>
+                        <span className="text-[10px] font-bold block">الأيام المتبقية على الخروج</span>
+                        <span className="text-base font-black font-mono block mt-0.5">
+                          {liveRemainingDays !== null ? `${liveRemainingDays} يوم` : "---"}
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-50 p-2.5 rounded border border-slate-200 text-center">
+                        <span className="text-[10px] font-bold text-slate-500 block">الأيام المنقضية داخل مكة</span>
+                        <span className="text-base font-black text-blue-900 font-mono block mt-0.5">
+                          {liveDaysSpent} يوم
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Left Column: Personal details & notes */}
+              <div className="space-y-4">
+                {/* Personal & Passport Details */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">اسم المعتمر / المسافر (بالعربي) *</label>
                     <Input
-                      type="date"
-                      value={form.travel_date}
-                      onChange={(e) => setForm({ ...form, travel_date: e.target.value })}
-                      className="font-bold text-base h-11 border-emerald-300 bg-white focus:border-emerald-500 focus:ring-emerald-200"
+                      placeholder="مثال: علي عبدالله علي الشهابي"
+                      value={form.name_ar}
+                      onChange={(e) => setForm({ ...form, name_ar: e.target.value })}
+                      className="font-bold"
                     />
-                    <p className="text-[10px] text-slate-500 mt-1">تاريخ دخول المعتمر الفعلي</p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">الاسم بالإنجليزية (حسب الجواز) *</label>
+                    <Input
+                      placeholder="Ali Abdullah Ali Al-Shehabi"
+                      value={form.name_en}
+                      onChange={(e) => setForm({ ...form, name_en: e.target.value })}
+                      dir="ltr"
+                      className="font-mono text-left font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">رقم الجواز *</label>
+                    <Input
+                      placeholder="مثال: 14800339"
+                      value={form.passport_number}
+                      onChange={(e) => setForm({ ...form, passport_number: e.target.value })}
+                      className="font-mono font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">الجنسية</label>
+                    <Input
+                      placeholder="يمني"
+                      value={form.nationality}
+                      onChange={(e) => setForm({ ...form, nationality: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">رقم الواتساب الفعال (مطلوب للتنبيهات) *</label>
+                    <Input
+                      placeholder="مثال: 966500000000 أو 0555123456"
+                      value={form.phone}
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      dir="ltr"
+                      className="font-mono text-left font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 mb-1 block">حالة المعتمر</label>
+                    <select
+                      value={form.travel_status}
+                      onChange={(e) => setForm({ ...form, travel_status: e.target.value })}
+                      className="w-full h-10 px-3 rounded-md border border-slate-300 text-xs font-bold bg-white text-slate-800"
+                    >
+                      <option value="داخل مكة">داخل مكة المكرمة</option>
+                      <option value="مغادر">غادر المملكة</option>
+                      <option value="متأخر">متأخر عن الخروج</option>
+                    </select>
                   </div>
                 </div>
 
-                {/* Live Calculated Results Box */}
-                {form.travel_date && form.program_duration_days && (
-                  <div className="bg-white p-3.5 rounded-lg border border-emerald-300 shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="bg-slate-50 p-2.5 rounded border border-slate-200 text-center">
-                      <span className="text-[10px] font-bold text-slate-500 block">تاريخ الخروج المتوقع</span>
-                      <span className="text-base font-black text-slate-900 font-mono block mt-0.5">
-                        {liveExitDate.replace(/-/g, "/") || "---"}
-                      </span>
-                    </div>
-
-                    <div className={`p-2.5 rounded border text-center ${
-                      liveRemainingDays !== null && liveRemainingDays <= 3 
-                        ? "bg-red-50 border-red-300 text-red-800" 
-                        : liveRemainingDays !== null && liveRemainingDays <= 10
-                        ? "bg-amber-50 border-amber-300 text-amber-800"
-                        : "bg-emerald-50 border-emerald-300 text-emerald-800"
-                    }`}>
-                      <span className="text-[10px] font-bold block">الأيام المتبقية على الخروج</span>
-                      <span className="text-base font-black font-mono block mt-0.5">
-                        {liveRemainingDays !== null ? `${liveRemainingDays} يوم` : "---"}
-                      </span>
-                    </div>
-
-                    <div className="bg-slate-50 p-2.5 rounded border border-slate-200 text-center">
-                      <span className="text-[10px] font-bold text-slate-500 block">الأيام المنقضية داخل مكة</span>
-                      <span className="text-base font-black text-blue-900 font-mono block mt-0.5">
-                        {liveDaysSpent} يوم
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Personal & Passport Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">اسم المعتمر / المسافر (بالعربي) *</label>
+                  <label className="text-xs font-bold text-slate-700 mb-1 block">ملاحظات إضافية</label>
                   <Input
-                    placeholder="مثال: علي عبدالله علي الشهابي"
-                    value={form.name_ar}
-                    onChange={(e) => setForm({ ...form, name_ar: e.target.value })}
-                    className="font-bold"
+                    placeholder="ملاحظات عن السكن، الفندق، النقل، جهة الاستقبال..."
+                    value={form.special_notes}
+                    onChange={(e) => setForm({ ...form, special_notes: e.target.value })}
                   />
                 </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">الاسم بالإنجليزية (حسب الجواز) *</label>
-                  <Input
-                    placeholder="Ali Abdullah Ali Al-Shehabi"
-                    value={form.name_en}
-                    onChange={(e) => setForm({ ...form, name_en: e.target.value })}
-                    dir="ltr"
-                    className="font-mono text-left font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">رقم الجواز *</label>
-                  <Input
-                    placeholder="مثال: 14800339"
-                    value={form.passport_number}
-                    onChange={(e) => setForm({ ...form, passport_number: e.target.value })}
-                    className="font-mono font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">الجنسية</label>
-                  <Input
-                    placeholder="يمني"
-                    value={form.nationality}
-                    onChange={(e) => setForm({ ...form, nationality: e.target.value })}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">رقم الواتساب الفعال (مطلوب للتنبيهات) *</label>
-                  <Input
-                    placeholder="مثال: 966500000000 أو 0555123456"
-                    value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    dir="ltr"
-                    className="font-mono text-left font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">حالة المعتمر</label>
-                  <select
-                    value={form.travel_status}
-                    onChange={(e) => setForm({ ...form, travel_status: e.target.value })}
-                    className="w-full h-10 px-3 rounded-md border border-slate-300 text-xs font-bold bg-white text-slate-800"
-                  >
-                    <option value="داخل مكة">داخل مكة المكرمة</option>
-                    <option value="مغادر">غادر المملكة</option>
-                    <option value="متأخر">متأخر عن الخروج</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 mb-1 block">ملاحظات إضافية</label>
-                <Input
-                  placeholder="ملاحظات عن السكن، الفندق، النقل، جهة الاستقبال..."
-                  value={form.special_notes}
-                  onChange={(e) => setForm({ ...form, special_notes: e.target.value })}
-                />
               </div>
             </div>
 
@@ -1891,7 +1897,7 @@ export default function PassengersPage() {
 
         {/* 3. WHATSAPP INTEGRATION MODAL */}
         <Dialog open={whatsAppModalOpen} onOpenChange={setWhatsAppModalOpen}>
-          <DialogContent className="max-w-xl" dir="rtl">
+          <DialogContent className="max-w-4xl lg:max-w-5xl max-h-[90vh] overflow-y-auto" dir="rtl">
             <DialogHeader>
               <DialogTitle className="text-lg font-black text-emerald-800 flex items-center gap-2">
                 <MessageCircle className="w-5 h-5 text-emerald-600" />
@@ -1902,164 +1908,173 @@ export default function PassengersPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 py-2">
-              {/* Authorization Status Banner */}
-              <div className={`p-3 rounded-lg border flex items-center justify-between ${whatsappAuthorized ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className={`w-5 h-5 ${whatsappAuthorized ? 'text-emerald-600' : 'text-amber-600'}`} />
-                  <div>
-                    <h4 className="text-xs font-bold">صلاحية الوصول لواتساب: {whatsappAuthorized ? 'مفعلة ومصرحة ✓' : 'غير مصرحة'}</h4>
-                    <p className="text-[10px] opacity-80">{whatsappAuthorized ? 'النظام جاهز للإرسال الفردي والجماعي الآمن' : 'يجب منح صلاحية الاتصال والإرسال الآمن أولاً'}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-2">
+              {/* Right Column: Connection status, modes, and official sender */}
+              <div className="space-y-4">
+                {/* Authorization Status Banner */}
+                <div className={`p-3 rounded-lg border flex items-center justify-between ${whatsappAuthorized ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className={`w-5 h-5 ${whatsappAuthorized ? 'text-emerald-600' : 'text-amber-600'}`} />
+                    <div>
+                      <h4 className="text-xs font-bold">صلاحية الوصول لواتساب: {whatsappAuthorized ? 'مفعلة ومصرحة ✓' : 'غير مصرحة'}</h4>
+                      <p className="text-[10px] opacity-80">{whatsappAuthorized ? 'النظام جاهز للإرسال الفردي والجماعي الآمن' : 'يجب منح صلاحية الاتصال والإرسال الآمن أولاً'}</p>
+                    </div>
+                  </div>
+                  {!whatsappAuthorized && (
+                    <Button size="sm" onClick={() => setWhatsappPermissionModalOpen(true)} className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0">
+                      طلب إذن الوصول
+                    </Button>
+                  )}
+                </div>
+
+                {/* Mode Selector: Manual vs Automatic */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-700 block">طريقة ونمط إرسال التنبيهات:</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setWhatsappSendMode("manual")}
+                      className={`p-3 rounded-lg border text-right transition-all ${whatsappSendMode === 'manual' ? 'border-emerald-600 bg-emerald-50/50 shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                    >
+                      <div className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                        <User className="w-4 h-4 text-emerald-600" />
+                        إرسال يدوي (تفاعلي)
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">مراجعة وفتح رابط واتساب لكل عميل على حدة</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setWhatsappSendMode("auto")}
+                      className={`p-3 rounded-lg border text-right transition-all ${whatsappSendMode === 'auto' ? 'border-emerald-600 bg-emerald-50/50 shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                    >
+                      <div className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-emerald-600" />
+                        أتمتة تلقائية (آمنة)
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">إرسال متسلسل جماعي آمن بفاصل زمني محدد</p>
+                    </button>
                   </div>
                 </div>
-                {!whatsappAuthorized && (
-                  <Button size="sm" onClick={() => setWhatsappPermissionModalOpen(true)} className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs">
-                    طلب إذن الوصول
-                  </Button>
+
+                {/* Agency / Office WhatsApp Sender Settings */}
+                <div className="p-3 bg-slate-50 border rounded-lg space-y-2">
+                  <label className="text-xs font-bold text-slate-700 block">رقم واتساب الوكالة / المكتب الرسمي:</label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={agencyWhatsAppSender}
+                      onChange={(e) => setAgencyWhatsAppSender(e.target.value)}
+                      placeholder="966500000000"
+                      dir="ltr"
+                      className="font-mono text-xs font-bold"
+                    />
+                    <Button
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        localStorage.setItem("pos_agency_whatsapp_sender", agencyWhatsAppSender);
+                        alert("تم حفظ رقم الوكالة / المكتب المرسل بنجاح!");
+                      }}
+                      className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold shrink-0"
+                    >
+                      حفظ الرقم
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-slate-500">هذا الرقم سيظهر رسمياً في ترويسة وتوقيع الرسائل والتقارير الموجهة لجميع المعتمرين والعملاء.</p>
+                </div>
+              </div>
+
+              {/* Left Column: Input text or automation settings */}
+              <div className="space-y-4">
+                {/* Anti-Ban Settings & Target Group if Auto mode */}
+                {whatsappSendMode === 'auto' && (
+                  <div className="p-3.5 bg-emerald-50/50 border border-emerald-200 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
+                      <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                        <Filter className="w-3.5 h-3.5 text-emerald-600" />
+                        تحديد فئة المعتمرين المستهدفين:
+                      </span>
+                      <select
+                        value={autoSendTargetGroup}
+                        onChange={(e: any) => setAutoSendTargetGroup(e.target.value)}
+                        className="text-xs font-bold bg-white border border-emerald-300 rounded px-2.5 py-1 text-emerald-900"
+                      >
+                        <option value="all">كافة المعتمرين ({selectedCustomerId ? filteredPassengers.length : umrahPassengers.length} معتمر)</option>
+                        <option value="warning_and_urgent">الإنذار والاقتراب فقط (≤ 10 أيام)</option>
+                        <option value="urgent_only">الحالات العاجلة فقط (≤ 3 أيام)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">نمط نص الرسالة التلقائية:</label>
+                      <select
+                        value={autoMessageTemplate}
+                        onChange={(e) => setAutoMessageTemplate(e.target.value)}
+                        className="w-full text-xs font-bold bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-800"
+                      >
+                        <option value="default">رسالة المتابعة والترحيب القياسية (رقم الجواز + الأيام المتبقية + تاريخ الخروج)</option>
+                        <option value="urgent">رسالة التنبيه العاجل وسرعة تأكيد العودة</option>
+                      </select>
+                    </div>
+
+                    <div className="pt-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-slate-700">الفاصل الزمني الآمن بين الرسائل:</span>
+                        <span className="text-xs font-mono font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200">{whatsappDelaySec} ثوانٍ</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="2"
+                        max="10"
+                        step="1"
+                        value={whatsappDelaySec}
+                        onChange={(e) => setWhatsappDelaySec(Number(e.target.value))}
+                        className="w-full accent-emerald-600"
+                      />
+                      <p className="text-[10px] text-emerald-800/80 mt-1">✓ يتم فحص أرقام الهواتف وتخطي الحقول الفارغة تلقائياً لمنع أي أخطاء أو تعليق أثناء الإرسال.</p>
+                    </div>
+                  </div>
+                )}
+
+                {whatsappSendMode === 'manual' ? (
+                  <>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 mb-1 block">رقم هاتف المستلم (واتساب) *</label>
+                      <div className="relative">
+                        <Input
+                          placeholder="مثال: 966500000000 أو 0555123456"
+                          value={whatsAppPhone}
+                          onChange={(e) => setWhatsAppPhone(e.target.value)}
+                          dir="ltr"
+                          className="font-mono text-left font-bold"
+                        />
+                        <Phone className="w-4 h-4 absolute right-3 top-3 text-slate-400" />
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">تأكد من كتابة الرقم بمفتاح الدولة (مثل 966 للسعودية أو 967 لليمن)</p>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 mb-1 block">نص الرسالة المنشأة للتسليم المباشر:</label>
+                      <textarea
+                        rows={6}
+                        value={whatsAppCustomText}
+                        onChange={(e) => setWhatsAppCustomText(e.target.value)}
+                        className="w-full p-3 rounded-lg border border-slate-300 text-xs font-mono bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 space-y-1.5">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <Info className="w-4 h-4 text-blue-700" />
+                      جاهزية الأتمتة التلقائية المباشرة:
+                    </div>
+                    <p className="text-[11px] text-blue-800 leading-relaxed">
+                      عند الضغط على <strong>"حفظ وبدء تنفيذ الإرسال التلقائي"</strong> في الأسفل، سيقوم النظام بالبدء فوراً في إرسال رسائل التذكير المتسلسلة إلى أرقام هواتف المعتمرين مع تطبيق التدابير الذكية لتفادي حظر واتساب وضمان وصول التنبيهات.
+                    </p>
+                  </div>
                 )}
               </div>
-
-              {/* Mode Selector: Manual vs Automatic */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setWhatsappSendMode("manual")}
-                  className={`p-3 rounded-lg border text-right transition-all ${whatsappSendMode === 'manual' ? 'border-emerald-600 bg-emerald-50/50 shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
-                >
-                  <div className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                    <User className="w-4 h-4 text-emerald-600" />
-                    إرسال يدوي (تفاعلي)
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-1">مراجعة وفتح رابط واتساب لكل عميل على حدة</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setWhatsappSendMode("auto")}
-                  className={`p-3 rounded-lg border text-right transition-all ${whatsappSendMode === 'auto' ? 'border-emerald-600 bg-emerald-50/50 shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
-                >
-                  <div className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-emerald-600" />
-                    أتمتة تلقائية (مع حماية ضد الحظر)
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-1">إرسال متسلسل جماعي آمن بفاصل زمني محدد</p>
-                </button>
-              </div>
-
-              {/* Anti-Ban Settings & Target Group if Auto mode */}
-              {whatsappSendMode === 'auto' && (
-                <div className="p-3.5 bg-emerald-50/50 border border-emerald-200 rounded-xl space-y-3">
-                  <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
-                    <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                      <Filter className="w-3.5 h-3.5 text-emerald-600" />
-                      تحديد فئة المعتمرين المستهدفين بالأتمتة:
-                    </span>
-                    <select
-                      value={autoSendTargetGroup}
-                      onChange={(e: any) => setAutoSendTargetGroup(e.target.value)}
-                      className="text-xs font-bold bg-white border border-emerald-300 rounded px-2.5 py-1 text-emerald-900"
-                    >
-                      <option value="all">كافة المعتمرين ({selectedCustomerId ? filteredPassengers.length : umrahPassengers.length} معتمر)</option>
-                      <option value="warning_and_urgent">الإنذار والاقتراب فقط (≤ 10 أيام)</option>
-                      <option value="urgent_only">الحالات العاجلة فقط (≤ 3 أيام)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">نمط نص الرسالة التلقائية:</label>
-                    <select
-                      value={autoMessageTemplate}
-                      onChange={(e) => setAutoMessageTemplate(e.target.value)}
-                      className="w-full text-xs font-bold bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-800"
-                    >
-                      <option value="default">رسالة المتابعة والترحيب القياسية (رقم الجواز + الأيام المتبقية + تاريخ الخروج)</option>
-                      <option value="urgent">رسالة التنبيه العاجل وسرعة تأكيد العودة</option>
-                    </select>
-                  </div>
-
-                  <div className="pt-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-slate-700">الفاصل الزمني الآمن بين الرسائل (حماية ضد الحظر):</span>
-                      <span className="text-xs font-mono font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200">{whatsappDelaySec} ثوانٍ</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="2"
-                      max="10"
-                      step="1"
-                      value={whatsappDelaySec}
-                      onChange={(e) => setWhatsappDelaySec(Number(e.target.value))}
-                      className="w-full accent-emerald-600"
-                    />
-                    <p className="text-[10px] text-emerald-800/80 mt-1">✓ يتم فحص أرقام الهواتف وتخطي الحقول الفارغة تلقائياً لمنع أي أخطاء أو تعليق أثناء الإرسال.</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Agency / Office WhatsApp Sender Settings */}
-              <div className="p-3 bg-slate-50 border rounded-lg space-y-2">
-                <label className="text-xs font-bold text-slate-700 block">رقم واتساب الوكالة / المكتب الرسمي (المرسل لكل المعتمرين):</label>
-                <div className="flex gap-2">
-                  <Input
-                    value={agencyWhatsAppSender}
-                    onChange={(e) => setAgencyWhatsAppSender(e.target.value)}
-                    placeholder="966500000000"
-                    dir="ltr"
-                    className="font-mono text-xs font-bold"
-                  />
-                  <Button
-                    size="sm"
-                    type="button"
-                    onClick={() => {
-                      localStorage.setItem("pos_agency_whatsapp_sender", agencyWhatsAppSender);
-                      alert("تم حفظ رقم الوكالة / المكتب المرسل بنجاح!");
-                    }}
-                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold shrink-0"
-                  >
-                    حفظ الرقم
-                  </Button>
-                </div>
-                <p className="text-[10px] text-slate-500">هذا الرقم سيظهر رسمياً في ترويسة وتوقيع الرسائل والتقارير الموجهة لجميع المعتمرين والعملاء.</p>
-              </div>
-
-              {whatsappSendMode === 'manual' ? (
-                <>
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 mb-1 block">رقم هاتف المستلم (واتساب) *</label>
-                    <div className="relative">
-                      <Input
-                        placeholder="مثال: 966500000000 أو 0555123456"
-                        value={whatsAppPhone}
-                        onChange={(e) => setWhatsAppPhone(e.target.value)}
-                        dir="ltr"
-                        className="font-mono text-left font-bold"
-                      />
-                      <Phone className="w-4 h-4 absolute right-3 top-3 text-slate-400" />
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-1">تأكد من كتابة الرقم بمفتاح الدولة (مثل 966 للسعودية أو 967 لليمن)</p>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 mb-1 block">نص الرسالة المنشأة للتسليم المباشر:</label>
-                    <textarea
-                      rows={6}
-                      value={whatsAppCustomText}
-                      onChange={(e) => setWhatsAppCustomText(e.target.value)}
-                      className="w-full p-3 rounded-lg border border-slate-300 text-xs font-mono bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                    />
-                  </div>
-                </>
-              ) : (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 space-y-1.5">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <Info className="w-4 h-4 text-blue-700" />
-                    جاهزية الأتمتة التلقائية المباشرة:
-                  </div>
-                  <p className="text-[11px] text-blue-800 leading-relaxed">
-                    عند الضغط على <strong>"حفظ وبدء تنفيذ الإرسال التلقائي"</strong> في الأسفل، سيقوم النظام بالبدء فوراً في إرسال رسائل التذكير المتسلسلة إلى أرقام هواتف المعتمرين مع تطبيق التدابير الذكية لتفادي حظر واتساب وضمان وصول التنبيهات.
-                  </p>
-                </div>
-              )}
             </div>
 
             <DialogFooter className="gap-2 border-t pt-3">
