@@ -1234,6 +1234,9 @@ router.post("/accounting/vouchers", (req, res) => {
     } else if (party_type === "supplier") {
       const supp = db.prepare("SELECT name FROM suppliers WHERE id = ?").get(numericPartyId) as any;
       if (supp) finalPartyName = supp.name;
+    } else if (party_type === "account") {
+      const acc = db.prepare("SELECT name FROM accounts WHERE id = ?").get(numericPartyId) as any;
+      if (acc) finalPartyName = acc.name;
     } else if (party_type === "user" || party_type === "system_user") {
       const sysUser = db.prepare("SELECT id, name, username, role FROM users WHERE id = ?").get(numericPartyId) as any;
       if (sysUser) {
@@ -1268,8 +1271,9 @@ router.post("/accounting/vouchers", (req, res) => {
   }
 
   try {
-    const countRow = db.prepare("SELECT COUNT(*) as c FROM vouchers").get() as { c: number };
-    const nextNum = String(countRow.c + 1);
+    const maxRow = db.prepare("SELECT MAX(id) as maxId FROM vouchers").get() as { maxId: number };
+    const nextId = (maxRow.maxId || 0) + 1;
+    const nextNum = String(nextId);
 
     let finalSafeId = safe_id ? Number(safe_id) : null;
     let finalBankId = bank_account_id ? Number(bank_account_id) : null;
@@ -1312,6 +1316,54 @@ router.post("/accounting/vouchers", (req, res) => {
     );
 
     const voucherId = r.lastInsertRowid;
+
+    // --- Financial Impact: Journal Entry ---
+    try {
+      const safeAccCode = finalBankId ? "11120" : "11100"; // Bank or Cash
+      let partyAccCode = "11100"; // Default
+
+      if (party_type === "account" && numericPartyId > 0) {
+        const acc = db.prepare("SELECT code FROM accounts WHERE id = ?").get(numericPartyId) as any;
+        if (acc) partyAccCode = acc.code;
+      } else if (party_type === "customer" && numericPartyId > 0) {
+        partyAccCode = getCustomerAccountCode(numericPartyId);
+      } else if (party_type === "supplier" && numericPartyId > 0) {
+        partyAccCode = getSupplierAccountCode(numericPartyId);
+      } else if (party_type === "employee" && numericPartyId > 0) {
+        // Find employee account if exists, else use 21100 (Suppliers/Payables) or general expenses
+        const emp = db.prepare("SELECT account_code FROM hr_employees WHERE id = ?").get(numericPartyId) as any;
+        partyAccCode = emp?.account_code || "21100";
+      }
+
+      const journalLines: any[] = [];
+      const description = `${type === 'receipt' ? 'سند قبض' : 'سند صرف'} رقم ${nextNum} - ${finalPartyName} (${notes || ''})`;
+
+      if (type === "receipt") {
+        // Receipt: Debit Safe/Bank, Credit Party
+        journalLines.push(
+          { account_code: safeAccCode, debit: numericAmount, credit: 0, description },
+          { account_code: partyAccCode, debit: 0, credit: numericAmount, description }
+        );
+      } else {
+        // Payment: Debit Party, Credit Safe/Bank
+        journalLines.push(
+          { account_code: partyAccCode, debit: numericAmount, credit: 0, description },
+          { account_code: safeAccCode, debit: 0, credit: numericAmount, description }
+        );
+      }
+
+      createDoubleEntryJournal(
+        new Date().toISOString().slice(0, 10),
+        description,
+        "voucher",
+        Number(voucherId),
+        journalLines,
+        { currency: currency || "SAR", cost_center_id: cost_center_id ? Number(cost_center_id) : undefined }
+      );
+    } catch (journalErr) {
+      console.error("Error creating journal entry for voucher:", journalErr);
+      // We don't fail the voucher creation if journal fails, but in a real system we might.
+    }
 
     // Balance Updates
     if (finalSafeId) {
@@ -1516,7 +1568,7 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
           FROM journal_entry_lines l
           JOIN journal_entries j ON j.id = l.journal_entry_id
           JOIN accounts a ON a.id = l.account_id
-          WHERE a.code = ? OR a.id = ?
+          WHERE (a.code = ? OR a.id = ?) AND (j.source_type IS NULL OR j.source_type != 'voucher')
         `).all(accCode, accCode) as any[];
 
         jLines.forEach(jl => {
@@ -1902,7 +1954,7 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
         const hotels = db.prepare(`
           SELECT id, booking_ref, hotel_name, city, cost_price, 
                  COALESCE(supplier_currency, 'SAR') as supplier_currency, 
-                 issue_date, notes, created_at
+                 issue_date, notes, created_at, supplier_payment_method
           FROM travel_hotels
           WHERE supplier_office_id = ? OR supplier_id = ? OR hotel_db_id = ? OR hotel_name = ? 
              OR hotel_name IN (SELECT name_ar FROM travel_hotels_db WHERE id = ?)
@@ -1911,6 +1963,9 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
 
         hotels.forEach(h => {
           if (existingHotelDocIds.has(String(h.id))) return;
+          const isCash = h.supplier_payment_method === 'cash' || h.supplier_payment_method === 'bank_transfer' || h.supplier_payment_method === 'cheque' || h.supplier_payment_method === 'wallet' || h.supplier_payment_method === 'نقداً';
+          if (isCash) return;
+
           const dateStr = h.issue_date || (h.created_at ? h.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10));
           transactions.push({
             date: dateStr,
