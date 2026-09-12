@@ -313,6 +313,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         { name: "دفتر اليومية العامة والقيود الآلية", href: "/accounting?tab=journal", icon: FileText },
         { name: "سند قبض", href: "/accounting?tab=receipt_vouchers", icon: Receipt },
         { name: "سند صرف", href: "/accounting?tab=payment_vouchers", icon: Wallet },
+        { name: "القيود اليومية", href: "/accounting?tab=manual_journal_entry", icon: FileSpreadsheet },
         { name: "إدارة الصناديق والخزائن المالية", href: "/accounting?tab=safes", icon: Wallet },
         { name: "الحسابات البنكية والتحويلات", href: "/accounting?tab=banks", icon: Landmark },
         { name: "مراكز التكلفة للفروع والخدمات", href: "/accounting?tab=cost_centers", icon: Layers },

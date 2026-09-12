@@ -22,6 +22,7 @@ import {
 import { tafqeet } from "@/lib/tafqeet";
 import { printA4Html, generateStatementA4Html, generateTrialBalanceA4Html, generateFinancialA4Html, generateVoucherA4Html, generateJournalVoucherA4Html } from "@/lib/printUtils";
 import JournalVoucherModal from "@/components/accounting/JournalVoucherModal";
+import { JournalEntryScreen } from "@/components/accounting/JournalEntryScreen";
 import { ReportViewerModal } from "@/components/ReportViewerModal";
 import { PrintHeader } from "@/components/print-header";
 
@@ -196,6 +197,7 @@ export default function Accounting() {
       case "chart": return "دليل الحسابات";
       case "journal": return "سجل القيود اليومية والمزدوجة";
       case "trial": return "ميزان المراجعة الشامل";
+      case "manual_journal_entry": return "القيود اليومية العامة";
       case "receipt_vouchers": return "شاشة سندات القبض (مستقلة)";
       case "payment_vouchers": return "شاشة سندات الصرف (مستقلة)";
       case "vouchers": return "سجل وقائمة كافة السندات";
@@ -4269,6 +4271,10 @@ export default function Accounting() {
 
           {/* ───────────────────────────────────────────────────────────── */}
 
+
+          <TabsContent value="manual_journal_entry" className="m-0 h-full">
+            <JournalEntryScreen accountsList={accountsList} costCentersList={costCenters} />
+          </TabsContent>
 
           {/* ───────────────────────────────────────────────────────────── */}
           {/* TAB 5: SAFES / CASH DRAWERS (إدارة الصناديق) */}
