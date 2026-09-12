@@ -39,6 +39,45 @@ export function syncJournalEntryForSource({
   }
 }
 
+function isCashOrBankMethod(method: string): boolean {
+  const m = String(method || '').trim().toLowerCase();
+  return (
+    m === 'cash' ||
+    m === 'bank' ||
+    m === 'bank_transfer' ||
+    m === 'pos' ||
+    m === 'card' ||
+    m === 'cheque' ||
+    m === 'wallet' ||
+    m.includes('نقدا') ||
+    m.includes('نقداً') ||
+    m.includes('كاش') ||
+    m.includes('صندوق') ||
+    m.includes('بنك') ||
+    m.includes('تحويل') ||
+    m.includes('شبكة') ||
+    m.includes('مدى') ||
+    m.includes('شيك') ||
+    m.includes('محفظة') ||
+    m.includes('رصيد')
+  );
+}
+
+function isBankMethod(method: string): boolean {
+  const m = String(method || '').trim().toLowerCase();
+  return (
+    m === 'bank' ||
+    m === 'bank_transfer' ||
+    m === 'pos' ||
+    m === 'card' ||
+    m.includes('بنك') ||
+    m.includes('تحويل') ||
+    m.includes('شبكة') ||
+    m.includes('مدى') ||
+    m.includes('شيك')
+  );
+}
+
 export function buildTravelJournalLines(params: {
   sell: number;
   cost: number;
@@ -63,11 +102,11 @@ export function buildTravelJournalLines(params: {
 
   // 1. Customer Side
   if (sell > 0) {
-    const isCashOrBank = custPayMethod === 'cash' || custPayMethod === 'bank' || custPayMethod === 'نقداً' || custPayMethod === 'تحويل بنكي';
+    const isCashOrBank = isCashOrBankMethod(custPayMethod);
     if (isCashOrBank) {
-      const debitAcc = (custPayMethod === 'bank' || custPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+      const debitAcc = isBankMethod(custPayMethod) ? '11120' : '11100';
       lines.push(
-        { account_code: debitAcc, debit: sell, credit: 0, description: `تحصيل (${custPayMethod === 'bank' || custPayMethod === 'تحويل بنكي' ? 'بنكي' : 'نقدي'}) - ${custStmt}`, currency: custCur },
+        { account_code: debitAcc, debit: sell, credit: 0, description: `تحصيل (${isBankMethod(custPayMethod) ? 'بنكي' : 'نقدي'}) - ${custStmt}`, currency: custCur },
         { account_code: revenueAcc, debit: 0, credit: sell, description: custStmt, currency: custCur }
       );
     } else {
@@ -77,9 +116,9 @@ export function buildTravelJournalLines(params: {
         { account_code: revenueAcc, debit: 0, credit: sell, description: custStmt, currency: custCur }
       );
       if (paid > 0) {
-        const debitAcc = (custPayMethod === 'bank' || custPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+        const debitAcc = isBankMethod(custPayMethod) ? '11120' : '11100';
         lines.push(
-          { account_code: debitAcc, debit: paid, credit: 0, description: `سداد جزئي (${custPayMethod === 'bank' || custPayMethod === 'تحويل بنكي' ? 'بنكي' : 'نقدي'}) - ${custStmt}`, currency: custCur },
+          { account_code: debitAcc, debit: paid, credit: 0, description: `سداد جزئي (${isBankMethod(custPayMethod) ? 'بنكي' : 'نقدي'}) - ${custStmt}`, currency: custCur },
           { account_code: custAcc, debit: 0, credit: paid, description: `سداد جزئي من العميل - ${custStmt}`, currency: custCur }
         );
       }
@@ -88,21 +127,21 @@ export function buildTravelJournalLines(params: {
 
   // 2. Supplier Side
   if (cost > 0) {
-    const isSuppCashOrBank = suppPayMethod === 'cash' || suppPayMethod === 'bank' || suppPayMethod === 'نقداً' || suppPayMethod === 'تحويل بنكي';
+    const isSuppCashOrBank = isCashOrBankMethod(suppPayMethod);
     if (isSuppCashOrBank) {
-      const creditAcc = (suppPayMethod === 'bank' || suppPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+      const creditAcc = isBankMethod(suppPayMethod) ? '11120' : '11100';
       lines.push(
         { account_code: expenseAcc, debit: cost, credit: 0, description: suppStmt, currency: suppCur },
-        { account_code: creditAcc, debit: 0, credit: cost, description: `سداد (${suppPayMethod === 'bank' || suppPayMethod === 'تحويل بنكي' ? 'بنكي' : 'نقدي'}) للمورد - ${suppStmt}`, currency: suppCur }
+        { account_code: creditAcc, debit: 0, credit: cost, description: `صرف نقدي/بنكي للمورد - ${suppStmt}`, currency: suppCur }
       );
     } else {
       // Credit / آجل
       lines.push(
         { account_code: expenseAcc, debit: cost, credit: 0, description: suppStmt, currency: suppCur },
-        { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات المورد - ${suppStmt}`, currency: suppCur }
+        { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات المورد (آجل) - ${suppStmt}`, currency: suppCur }
       );
       if (sPaid > 0) {
-        const creditAcc = (suppPayMethod === 'bank' || suppPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+        const creditAcc = isBankMethod(suppPayMethod) ? '11120' : '11100';
         lines.push(
           { account_code: suppAcc, debit: sPaid, credit: 0, description: `سداد جزئي للمورد - ${suppStmt}`, currency: suppCur },
           { account_code: creditAcc, debit: 0, credit: sPaid, description: `صرف جزئي للمورد - ${suppStmt}`, currency: suppCur }
@@ -136,9 +175,9 @@ export function buildHotelJournalLines(params: {
 
   // 1. Customer Side
   if (sell > 0) {
-    const isCashOrBank = custPayMethod === 'cash' || custPayMethod === 'bank' || custPayMethod === 'bank_transfer' || custPayMethod === 'pos' || custPayMethod === 'cheque' || custPayMethod === 'wallet' || custPayMethod === 'نقداً' || custPayMethod === 'تحويل بنكي';
+    const isCashOrBank = isCashOrBankMethod(custPayMethod);
     if (isCashOrBank) {
-      const debitAcc = (custPayMethod === 'bank' || custPayMethod === 'bank_transfer' || custPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+      const debitAcc = isBankMethod(custPayMethod) ? '11120' : '11100';
       lines.push(
         { account_code: debitAcc, debit: sell, credit: 0, description: `تحصيل نقدي/بنكي فوري - ${custStmt}`, currency: custCur },
         { account_code: revenueAcc, debit: 0, credit: sell, description: custStmt, currency: custCur }
@@ -154,9 +193,9 @@ export function buildHotelJournalLines(params: {
 
   // 2. Supplier Side
   if (cost > 0) {
-    const isSuppCashOrBank = suppPayMethod === 'cash' || suppPayMethod === 'bank' || suppPayMethod === 'bank_transfer' || suppPayMethod === 'cheque' || suppPayMethod === 'wallet' || suppPayMethod === 'نقداً' || suppPayMethod === 'تحويل بنكي';
+    const isSuppCashOrBank = isCashOrBankMethod(suppPayMethod);
     if (isSuppCashOrBank) {
-      const creditAcc = (suppPayMethod === 'bank' || suppPayMethod === 'bank_transfer' || suppPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+      const creditAcc = isBankMethod(suppPayMethod) ? '11120' : '11100';
       lines.push(
         { account_code: expenseAcc, debit: cost, credit: 0, description: suppStmt, currency: suppCur },
         { account_code: creditAcc, debit: 0, credit: cost, description: `صرف نقدي/بنكي للمورد - ${suppStmt}`, currency: suppCur }
