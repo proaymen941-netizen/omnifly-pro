@@ -195,10 +195,9 @@ export function buildHotelJournalLines(params: {
   // 2. Supplier Side
   if (cost > 0) {
     if (isSuppPaidCash) { // Use explicit parameter
-      const creditAcc = isBankMethod(suppPayMethod) ? '11120' : '11100';
+      // If paid cash, just record the expense, do not touch supplier account
       lines.push(
-        { account_code: expenseAcc, debit: cost, credit: 0, description: suppStmt, currency: suppCur },
-        { account_code: creditAcc, debit: 0, credit: cost, description: `صرف نقدي/بنكي للمورد - ${suppStmt}`, currency: suppCur }
+        { account_code: expenseAcc, debit: cost, credit: 0, description: suppStmt, currency: suppCur }
       );
     } else {
       // Credit / آجل
