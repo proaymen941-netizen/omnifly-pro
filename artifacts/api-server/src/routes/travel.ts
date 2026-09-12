@@ -884,7 +884,7 @@ router.post("/travel/bookings", (req, res) => {
   const prof = sell - cost;
   const num = booking_number || `BK-${Date.now().toString().slice(-6)}`;
   const custPayMethod = payment_method || 'cash';
-  const suppPayMethod = supplier_payment_method || 'credit';
+  const suppPayMethod = supplier_payment_method || custPayMethod || 'credit';
   const custCur = customer_currency || 'SAR';
   const suppCur = supplier_currency || 'SAR';
   const custStmt = customer_statement || `قيمة تذكرة طيران PNR: ${pnr || ''} رقم: ${ticket_number || num}`;
@@ -1674,7 +1674,7 @@ router.post("/travel/visas", (req, res) => {
 
     const finalCountry = (country && String(country).trim()) || 'المملكة العربية السعودية';
     const payMethod = payment_method || 'cash';
-    const suppPayMethod = supplier_payment_method || 'credit';
+    const suppPayMethod = supplier_payment_method || payMethod || 'credit';
     const cost = Number(cost_price || 0);
     const sell = Number(selling_price || 0);
 
@@ -2965,7 +2965,7 @@ router.post("/travel/hotels", (req, res) => {
       const hotelBookingCur = customer_currency || supplier_currency || 'SAR';
       const lines = buildHotelJournalLines({
         sell, cost, custPayMethod: payment_method || 'cash',
-        suppPayMethod: supplier_payment_method || 'credit',
+        suppPayMethod: supplier_payment_method || payment_method || 'credit',
         custAcc, suppAcc, revenueAcc: "42001", expenseAcc: "52000",
         custCur: customer_currency || hotelBookingCur, suppCur: supplier_currency || hotelBookingCur,
         custStmt: customer_statement || `حجز فندق ${finalHotelName} - مرجع: ${ref}`,
@@ -3066,7 +3066,7 @@ router.put("/travel/hotels/:id", (req, res) => {
       const hotelBookingCur = supplier_currency || customer_currency || 'SAR';
       const lines = buildHotelJournalLines({
         sell, cost, custPayMethod: payment_method || 'cash',
-        suppPayMethod: supplier_payment_method || 'credit',
+        suppPayMethod: supplier_payment_method || payment_method || 'credit',
         custAcc, suppAcc, revenueAcc: "42001", expenseAcc: "52000",
         custCur: customer_currency || hotelBookingCur, suppCur: supplier_currency || hotelBookingCur,
         custStmt: customer_statement || `تعديل حجز فندق ${finalHotelName} - مرجع: ${booking_ref}`,
