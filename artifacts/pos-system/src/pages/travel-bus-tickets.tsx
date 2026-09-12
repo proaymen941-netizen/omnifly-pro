@@ -361,6 +361,48 @@ export default function TravelBusTicketsPage() {
     });
   };
 
+  const handlePaymentMethodChange = (method: string) => {
+    const sell = Number(form.selling_price) || 0;
+    if (method === "credit") {
+      setForm((prev: any) => ({
+        ...prev,
+        payment_method: method,
+        paid_amount: "0",
+        remaining_balance: String(sell),
+        payment_status: "unpaid"
+      }));
+    } else {
+      setForm((prev: any) => ({
+        ...prev,
+        payment_method: method,
+        paid_amount: String(sell),
+        remaining_balance: "0",
+        payment_status: "paid"
+      }));
+    }
+  };
+
+  const handleSupplierPaymentMethodChange = (method: string) => {
+    const cost = Number(form.cost_price) || 0;
+    if (method === "credit") {
+      setForm((prev: any) => ({
+        ...prev,
+        supplier_payment_method: method,
+        supplier_paid_amount: "0",
+        supplier_remaining_balance: String(cost),
+        supplier_payment_status: "unpaid"
+      }));
+    } else {
+      setForm((prev: any) => ({
+        ...prev,
+        supplier_payment_method: method,
+        supplier_paid_amount: String(cost),
+        supplier_remaining_balance: "0",
+        supplier_payment_status: "paid"
+      }));
+    }
+  };
+
   const handleCustomerPaymentStatusChange = (status: string) => {
     const sell = Number(form.selling_price) || 0;
     if (status === "paid") {
@@ -1447,35 +1489,20 @@ export default function TravelBusTicketsPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-700">طريقة السداد *</label>
-                        <select
-                          required
-                          value={form.payment_method}
-                          onChange={e => setForm({ ...form, payment_method: e.target.value })}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold"
-                        >
-                          <option value="cash">نقداً (Cash)</option>
-                          <option value="credit">آجل على الحساب (Credit)</option>
-                          <option value="bank">تحويل بنكي (Bank Transfer)</option>
-                          <option value="card">بطاقة دفع (Card)</option>
-                          <option value="cheque">شيك (Cheque)</option>
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-700">حالة السداد *</label>
-                        <select
-                          required
-                          value={form.payment_status}
-                          onChange={e => handleCustomerPaymentStatusChange(e.target.value)}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold"
-                        >
-                          <option value="paid">مسدد بالكامل</option>
-                          <option value="unpaid">غير مسدد</option>
-                          <option value="partial">مسدد جزئياً</option>
-                        </select>
-                      </div>
+                    <div className="space-y-1 mb-3">
+                      <label className="text-[11px] font-bold text-slate-700">طريقة السداد *</label>
+                      <select
+                        required
+                        value={form.payment_method}
+                        onChange={e => handlePaymentMethodChange(e.target.value)}
+                        className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold"
+                      >
+                        <option value="cash">نقداً (Cash)</option>
+                        <option value="credit">آجل على الحساب (Credit)</option>
+                        <option value="bank">تحويل بنكي (Bank Transfer)</option>
+                        <option value="card">بطاقة دفع (Card)</option>
+                        <option value="cheque">شيك (Cheque)</option>
+                      </select>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 mb-3">
@@ -1487,7 +1514,7 @@ export default function TravelBusTicketsPage() {
                           step="any"
                           value={form.paid_amount}
                           onChange={e => handlePaidAmountChange(e.target.value)}
-                          disabled={form.payment_method === 'credit' || form.payment_status === 'unpaid' || form.payment_status === 'paid'}
+                          disabled={form.payment_method === 'credit'}
                           className="h-9 bg-white font-mono text-xs disabled:opacity-50"
                         />
                       </div>
@@ -1572,33 +1599,18 @@ export default function TravelBusTicketsPage() {
                       </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-700">طريقة سداد المورد *</label>
-                        <select
-                          required
-                          value={form.supplier_payment_method}
-                          onChange={e => setForm({ ...form, supplier_payment_method: e.target.value })}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold"
-                        >
-                          {SUPPLIER_PAYMENT_METHODS.map(pm => (
-                            <option key={pm.id} value={pm.id}>{pm.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-700">حالة السداد *</label>
-                        <select
-                          required
-                          value={form.supplier_payment_status}
-                          onChange={e => handleSupplierPaymentStatusChange(e.target.value)}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold"
-                        >
-                          <option value="paid">مسدد بالكامل</option>
-                          <option value="unpaid">غير مسدد</option>
-                          <option value="partial">مسدد جزئياً</option>
-                        </select>
-                      </div>
+                    <div className="space-y-1 mb-3">
+                      <label className="text-[11px] font-bold text-slate-700">طريقة سداد المورد *</label>
+                      <select
+                        required
+                        value={form.supplier_payment_method}
+                        onChange={e => handleSupplierPaymentMethodChange(e.target.value)}
+                        className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold"
+                      >
+                        {SUPPLIER_PAYMENT_METHODS.map(pm => (
+                          <option key={pm.id} value={pm.id}>{pm.label}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 

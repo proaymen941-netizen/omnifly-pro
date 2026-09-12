@@ -845,6 +845,10 @@ export default function TravelVisasPage() {
       cost_price: "0",
       supplier_currency: "SAR",
       supplier_statement: "",
+      supplier_payment_method: "credit",
+      supplier_payment_status: "unpaid",
+      supplier_paid_amount: "0",
+      supplier_remaining_balance: "0",
       agency_commission: "0",
       commission_currency: "SAR",
       commission_statement: "",
@@ -887,6 +891,10 @@ export default function TravelVisasPage() {
       cost_price: String(v.cost_price ?? 0),
       supplier_currency: v.supplier_currency || "SAR",
       supplier_statement: v.supplier_statement || "",
+      supplier_payment_method: v.supplier_payment_method || "credit",
+      supplier_payment_status: v.supplier_payment_status || "unpaid",
+      supplier_paid_amount: String(v.supplier_paid_amount ?? 0),
+      supplier_remaining_balance: String(v.supplier_remaining_balance ?? (v.cost_price ?? 0)),
       agency_commission: String(v.agency_commission ?? ((v.selling_price || 0) - (v.cost_price || 0))),
       commission_currency: v.commission_currency || v.customer_currency || "SAR",
       commission_statement: v.commission_statement || "",
@@ -2515,35 +2523,20 @@ export default function TravelVisasPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-700">طريقة سداد العميل *</label>
-                        <select
-                          required
-                          value={form.payment_method}
-                          onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold"
-                        >
-                          <option value="cash">نقداً (Cash)</option>
-                          <option value="credit">آجل على الحساب (Credit)</option>
-                          <option value="bank">تحويل بنكي (Bank Transfer)</option>
-                          <option value="card">بطاقة دفع (Card)</option>
-                          <option value="cheque">شيك (Cheque)</option>
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-700">حالة السداد *</label>
-                        <select
-                          required
-                          value={form.payment_status}
-                          onChange={e => handlePaymentStatusChange(e.target.value)}
-                          className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold"
-                        >
-                          <option value="paid">مسدد بالكامل</option>
-                          <option value="unpaid">غير مسدد</option>
-                          <option value="partial">مسدد جزئياً</option>
-                        </select>
-                      </div>
+                    <div className="space-y-1 mb-3">
+                      <label className="text-[11px] font-bold text-slate-700">طريقة سداد العميل *</label>
+                      <select
+                        required
+                        value={form.payment_method}
+                        onChange={e => handlePaymentMethodChange(e.target.value)}
+                        className="flex h-9 w-full rounded-md border border-input bg-white px-2 text-xs font-bold"
+                      >
+                        <option value="cash">نقداً (Cash)</option>
+                        <option value="credit">آجل على الحساب (Credit)</option>
+                        <option value="bank">تحويل بنكي (Bank Transfer)</option>
+                        <option value="card">بطاقة دفع (Card)</option>
+                        <option value="cheque">شيك (Cheque)</option>
+                      </select>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 mb-3">
@@ -2555,7 +2548,7 @@ export default function TravelVisasPage() {
                           step="any"
                           value={form.paid_amount}
                           onChange={e => handlePaidAmountChange(e.target.value)}
-                          disabled={form.payment_method === 'credit' || form.payment_status === 'unpaid' || form.payment_status === 'paid'}
+                          disabled={form.payment_method === 'credit'}
                           className="h-9 bg-white font-mono text-xs disabled:opacity-50"
                         />
                       </div>

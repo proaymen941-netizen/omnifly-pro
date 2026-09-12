@@ -39,6 +39,81 @@ export function syncJournalEntryForSource({
   }
 }
 
+export function buildTravelJournalLines(params: {
+  sell: number;
+  cost: number;
+  custPayMethod: string;
+  paid: number;
+  suppPayMethod: string;
+  sPaid: number;
+  custAcc: string;
+  suppAcc: string;
+  revenueAcc: string;
+  expenseAcc: string;
+  custCur: string;
+  suppCur: string;
+  custStmt: string;
+  suppStmt: string;
+}): any[] {
+  const lines: any[] = [];
+  const {
+    sell, cost, custPayMethod, paid, suppPayMethod, sPaid,
+    custAcc, suppAcc, revenueAcc, expenseAcc, custCur, suppCur, custStmt, suppStmt
+  } = params;
+
+  // 1. Customer Side
+  if (sell > 0) {
+    const isCashOrBank = custPayMethod === 'cash' || custPayMethod === 'bank' || custPayMethod === 'نقداً' || custPayMethod === 'تحويل بنكي';
+    if (isCashOrBank) {
+      const debitAcc = (custPayMethod === 'bank' || custPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+      lines.push(
+        { account_code: debitAcc, debit: sell, credit: 0, description: `تحصيل (${custPayMethod === 'bank' || custPayMethod === 'تحويل بنكي' ? 'بنكي' : 'نقدي'}) - ${custStmt}`, currency: custCur },
+        { account_code: revenueAcc, debit: 0, credit: sell, description: custStmt, currency: custCur }
+      );
+    } else {
+      // Credit / آجل
+      lines.push(
+        { account_code: custAcc, debit: sell, credit: 0, description: custStmt, currency: custCur },
+        { account_code: revenueAcc, debit: 0, credit: sell, description: custStmt, currency: custCur }
+      );
+      if (paid > 0) {
+        const debitAcc = (custPayMethod === 'bank' || custPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+        lines.push(
+          { account_code: debitAcc, debit: paid, credit: 0, description: `سداد جزئي (${custPayMethod === 'bank' || custPayMethod === 'تحويل بنكي' ? 'بنكي' : 'نقدي'}) - ${custStmt}`, currency: custCur },
+          { account_code: custAcc, debit: 0, credit: paid, description: `سداد جزئي من العميل - ${custStmt}`, currency: custCur }
+        );
+      }
+    }
+  }
+
+  // 2. Supplier Side
+  if (cost > 0) {
+    const isSuppCashOrBank = suppPayMethod === 'cash' || suppPayMethod === 'bank' || suppPayMethod === 'نقداً' || suppPayMethod === 'تحويل بنكي';
+    if (isSuppCashOrBank) {
+      const creditAcc = (suppPayMethod === 'bank' || suppPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+      lines.push(
+        { account_code: expenseAcc, debit: cost, credit: 0, description: suppStmt, currency: suppCur },
+        { account_code: creditAcc, debit: 0, credit: cost, description: `سداد (${suppPayMethod === 'bank' || suppPayMethod === 'تحويل بنكي' ? 'بنكي' : 'نقدي'}) للمورد - ${suppStmt}`, currency: suppCur }
+      );
+    } else {
+      // Credit / آجل
+      lines.push(
+        { account_code: expenseAcc, debit: cost, credit: 0, description: suppStmt, currency: suppCur },
+        { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات المورد - ${suppStmt}`, currency: suppCur }
+      );
+      if (sPaid > 0) {
+        const creditAcc = (suppPayMethod === 'bank' || suppPayMethod === 'تحويل بنكي') ? '11120' : '11100';
+        lines.push(
+          { account_code: suppAcc, debit: sPaid, credit: 0, description: `سداد جزئي للمورد - ${suppStmt}`, currency: suppCur },
+          { account_code: creditAcc, debit: 0, credit: sPaid, description: `صرف جزئي للمورد - ${suppStmt}`, currency: suppCur }
+        );
+      }
+    }
+  }
+
+  return lines;
+}
+
 // ==========================================
 // 1. PASSENGERS MANAGEMENT (المسافرين)
 // ==========================================
@@ -759,43 +834,12 @@ router.post("/travel/bookings", (req, res) => {
     const desc = `قيد حجز وإصدار تذكرة طيران PNR: ${pnr || ''} رقم: ${ticket_number || num}`;
     const custAcc = getCustomerAccountCode(customer_id);
     const suppAcc = getSupplierAccountCode(supplier_id);
-    const lines: any[] = [];
-
-    // 1. الطرف الأول: مبيعات التذكرة للعميل
-    if (sell > 0) {
-      // إثبات استحقاق المبيعات
-      lines.push(
-        { account_code: custAcc, debit: sell, credit: 0, description: custStmt, currency: custCur },
-        { account_code: "41001", debit: 0, credit: sell, description: `إيرادات مبيعات تذاكر الطيران - ${pnr || ''}`, currency: custCur }
-      );
-
-      // إذا كان الدفع نقدًا (Cash) -> يتم تسجيل تحصيل في الصندوق ومدين للصندوق
-      if (custPayMethod === 'cash') {
-        lines.push(
-          { account_code: "11100", debit: sell, credit: 0, description: `تحصيل نقدي بالصندوق من العميل - ${custStmt}`, currency: custCur },
-          { account_code: custAcc, debit: 0, credit: sell, description: `سداد نقدي من العميل - ${custStmt}`, currency: custCur }
-        );
-      }
-      // إذا كان آجل (Credit) -> يبقى في حساب العميل كمدين (ذمم مدينة) دون تأثير على الصندوق
-    }
-
-    // 2. الطرف الثاني: تكلفة التذكرة لشركة الطيران / المورد
-    if (cost > 0) {
-      // إثبات تكلفة التذكرة
-      lines.push(
-        { account_code: "51000", debit: cost, credit: 0, description: suppStmt, currency: suppCur },
-        { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات شركة الطيران / المورد - ${pnr || ''}`, currency: suppCur }
-      );
-
-      // إذا كان الدفع للمورد نقدًا (Cash) -> يتم تسجيل صرف من الصندوق (دائن للصندوق 11100)
-      if (suppPayMethod === 'cash') {
-        lines.push(
-          { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي لشركة الطيران - ${suppStmt}`, currency: suppCur },
-          { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق لشركة الطيران - ${suppStmt}`, currency: suppCur }
-        );
-      }
-      // إذا كان آجل (Credit) -> يبقى في حساب شركة الطيران / المورد كدائن (ذمم دائنة) دون تأثير على الصندوق
-    }
+    const lines = buildTravelJournalLines({
+      sell, cost, custPayMethod, paid: Number(req.body.paid_amount || 0),
+      suppPayMethod, sPaid: Number(req.body.supplier_paid_amount || 0),
+      custAcc, suppAcc, revenueAcc: "41001", expenseAcc: "51000",
+      custCur, suppCur, custStmt, suppStmt
+    });
 
     if (lines.length > 0) {
       syncJournalEntryForSource({
@@ -957,37 +1001,12 @@ router.put("/travel/bookings/:id", (req, res) => {
     const desc = `قيد تعديل حجز وإصدار تذكرة طيران PNR: ${pnr || (oldBooking as any)?.pnr || ''} رقم: ${ticket_number || (oldBooking as any)?.ticket_number || ''}`;
     const custAcc = getCustomerAccountCode(customer_id);
     const suppAcc = getSupplierAccountCode(supplier_id);
-    const lines: any[] = [];
-
-    // 1. الطرف الأول: العميل
-    if (sell > 0) {
-      lines.push(
-        { account_code: custAcc, debit: sell, credit: 0, description: custStmt, currency: custCur },
-        { account_code: "41001", debit: 0, credit: sell, description: `إيرادات مبيعات تذاكر الطيران - ${pnr || ''}`, currency: custCur }
-      );
-
-      if (custPayMethod === 'cash') {
-        lines.push(
-          { account_code: "11100", debit: sell, credit: 0, description: `تحصيل نقدي بالصندوق من العميل - ${custStmt}`, currency: custCur },
-          { account_code: custAcc, debit: 0, credit: sell, description: `سداد نقدي من العميل - ${custStmt}`, currency: custCur }
-        );
-      }
-    }
-
-    // 2. الطرف الثاني: شركة الطيران / المورد
-    if (cost > 0) {
-      lines.push(
-        { account_code: "51000", debit: cost, credit: 0, description: suppStmt, currency: suppCur },
-        { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات شركة الطيران / المورد - ${pnr || ''}`, currency: suppCur }
-      );
-
-      if (suppPayMethod === 'cash') {
-        lines.push(
-          { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي لشركة الطيران - ${suppStmt}`, currency: suppCur },
-          { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق لشركة الطيران - ${suppStmt}`, currency: suppCur }
-        );
-      }
-    }
+    const lines = buildTravelJournalLines({
+      sell, cost, custPayMethod, paid: Number(req.body.paid_amount || 0),
+      suppPayMethod, sPaid: Number(req.body.supplier_paid_amount || 0),
+      custAcc, suppAcc, revenueAcc: "41001", expenseAcc: "51000",
+      custCur, suppCur, custStmt, suppStmt
+    });
 
     if (lines.length > 0) {
       syncJournalEntryForSource({
@@ -1628,29 +1647,15 @@ router.post("/travel/visas", (req, res) => {
     const custAcc = getCustomerAccountCode(customer_id);
     const suppAcc = getSupplierAccountCode(supplier_office_id || supplier_agent || suppName);
     const visaCur = customer_currency || supplier_currency || 'SAR';
-    const lines: any[] = [
-      { account_code: custAcc, debit: sell, credit: 0, description: `استحقاق مبلغ ${visa_type || 'التأشيرة'} على العميل`, currency: customer_currency || visaCur },
-      { account_code: "43001", debit: 0, credit: sell, description: `ايرادات عمولة مبيعات معاملات التاشيرات`, currency: customer_currency || visaCur }
-    ];
-    if (cost > 0) {
-      lines.push(
-        { account_code: "53000", debit: cost, credit: 0, description: `تكلفة ورسوم القنصلية / التأشيرة`, currency: supplier_currency || visaCur },
-        { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات مكتب التأشيرات / المورد`, currency: supplier_currency || visaCur }
-      );
-      if (suppPayMethod === 'cash') {
-        lines.push(
-          { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي لمكتب التأشيرات/المورد`, currency: supplier_currency || visaCur },
-          { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق لمكتب التأشيرات/المورد`, currency: supplier_currency || visaCur }
-        );
-      }
-    }
-    if (paid > 0) {
-      const debitAcc = payMethod === 'bank' ? '11120' : '11100';
-      lines.push(
-        { account_code: debitAcc, debit: paid, credit: 0, description: `تحصيل (${payMethod === 'bank' ? 'بنكي' : 'نقدي'}) لتأشيرة ${appNum}`, currency: customer_currency || visaCur },
-        { account_code: custAcc, debit: 0, credit: paid, description: `سداد من العميل`, currency: customer_currency || visaCur }
-      );
-    }
+    const lines = buildTravelJournalLines({
+      sell, cost, custPayMethod: payMethod, paid,
+      suppPayMethod, sPaid,
+      custAcc, suppAcc, revenueAcc: "43001", expenseAcc: "53000",
+      custCur: customer_currency || visaCur, suppCur: supplier_currency || visaCur,
+      custStmt: customer_statement || `رسوم معاملة ${visa_type || 'تأشيرة'} - ${appNum}`,
+      suppStmt: supplier_statement || `تكلفة معاملة ${visa_type || 'تأشيرة'} - ${appNum}`
+    });
+
     syncJournalEntryForSource({
       sourceType: "visa",
       sourceId: Number(info.lastInsertRowid),
@@ -1750,29 +1755,15 @@ router.put("/travel/visas/:id", (req, res) => {
     const custAcc = getCustomerAccountCode(customer_id);
     const suppAcc = getSupplierAccountCode(supplier_office_id || suppName);
     const visaCur = customer_currency || supplier_currency || 'SAR';
-    const lines: any[] = [
-      { account_code: custAcc, debit: sell, credit: 0, description: `استحقاق مبلغ ${visa_type || 'التأشيرة'} على العميل`, currency: customer_currency || visaCur },
-      { account_code: "43001", debit: 0, credit: sell, description: `ايرادات عمولة مبيعات معاملات التاشيرات`, currency: customer_currency || visaCur }
-    ];
-    if (cost > 0) {
-      lines.push(
-        { account_code: "53000", debit: cost, credit: 0, description: `تكلفة ورسوم القنصلية / التأشيرة`, currency: supplier_currency || visaCur },
-        { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات مكتب التأشيرات / المورد`, currency: supplier_currency || visaCur }
-      );
-      if (suppPayMethod === 'cash') {
-        lines.push(
-          { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي لمكتب التأشيرات/المورد`, currency: supplier_currency || visaCur },
-          { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق لمكتب التأشيرات/المورد`, currency: supplier_currency || visaCur }
-        );
-      }
-    }
-    if (paid > 0) {
-      const debitAcc = payMethod === 'bank' ? '11120' : '11100';
-      lines.push(
-        { account_code: debitAcc, debit: paid, credit: 0, description: `تحصيل (${payMethod === 'bank' ? 'بنكي' : 'نقدي'}) لتأشيرة ${updated.application_number || req.params.id}`, currency: customer_currency || visaCur },
-        { account_code: custAcc, debit: 0, credit: paid, description: `سداد من العميل`, currency: customer_currency || visaCur }
-      );
-    }
+    const lines = buildTravelJournalLines({
+      sell, cost, custPayMethod: payMethod, paid,
+      suppPayMethod, sPaid,
+      custAcc, suppAcc, revenueAcc: "43001", expenseAcc: "53000",
+      custCur: customer_currency || visaCur, suppCur: supplier_currency || visaCur,
+      custStmt: customer_statement || `رسوم معاملة ${visa_type || 'تأشيرة'} - ${updated.application_number || req.params.id}`,
+      suppStmt: supplier_statement || `تكلفة معاملة ${visa_type || 'تأشيرة'} - ${updated.application_number || req.params.id}`
+    });
+
     syncJournalEntryForSource({
       sourceType: "visa",
       sourceId: Number(req.params.id),
@@ -2805,29 +2796,15 @@ router.post("/travel/hotels", (req, res) => {
       const custAcc = getCustomerAccountCode(customer_id);
       const suppAcc = getSupplierAccountCode(supplier_office_id || supplier_id || hotel_db_id || finalHotelName);
       const hotelBookingCur = customer_currency || supplier_currency || 'SAR';
-      const lines: any[] = [
-        { account_code: custAcc, debit: sell, credit: 0, description: `استحقاق قيمة حجز الفندق على العميل`, currency: customer_currency || hotelBookingCur },
-        { account_code: "42001", debit: 0, credit: sell, description: `ايرادات عمولة مبيعات حجوزات الفنادق`, currency: customer_currency || hotelBookingCur }
-      ];
-      if (cost > 0) {
-        lines.push(
-          { account_code: "52000", debit: cost, credit: 0, description: `تكلفة حجز الفندق`, currency: supplier_currency || hotelBookingCur },
-          { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات الفندق / المورد`, currency: supplier_currency || hotelBookingCur }
-        );
-        if (supplier_payment_method === 'cash') {
-          lines.push(
-            { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي للمورد/الفندق`, currency: supplier_currency || hotelBookingCur },
-            { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق للمورد/الفندق`, currency: supplier_currency || hotelBookingCur }
-          );
-        }
-      }
-      if (paid > 0) {
-        const debitAcc = payment_method === 'bank' ? '11120' : '11100';
-        lines.push(
-          { account_code: debitAcc, debit: paid, credit: 0, description: `تحصيل قيمة حجز الفندق من العميل`, currency: customer_currency || hotelBookingCur },
-          { account_code: custAcc, debit: 0, credit: paid, description: `سداد من العميل`, currency: customer_currency || hotelBookingCur }
-        );
-      }
+      const lines = buildTravelJournalLines({
+        sell, cost, custPayMethod: payment_method || 'cash', paid,
+        suppPayMethod: supplier_payment_method || 'credit', sPaid,
+        custAcc, suppAcc, revenueAcc: "42001", expenseAcc: "52000",
+        custCur: customer_currency || hotelBookingCur, suppCur: supplier_currency || hotelBookingCur,
+        custStmt: customer_statement || `حجز فندق ${finalHotelName} - مرجع: ${ref}`,
+        suppStmt: supplier_statement || `تكلفة حجز فندق ${finalHotelName} - مرجع: ${ref}`
+      });
+
       syncJournalEntryForSource({
         sourceType: "hotel",
         sourceId: Number(info.lastInsertRowid),
@@ -2920,29 +2897,15 @@ router.put("/travel/hotels/:id", (req, res) => {
       const custAcc = getCustomerAccountCode(customer_id);
       const suppAcc = getSupplierAccountCode(supplier_office_id || supplier_id || hotel_db_id || hotel_name);
       const hotelBookingCur = supplier_currency || customer_currency || 'SAR';
-      const lines: any[] = [
-        { account_code: custAcc, debit: sell, credit: 0, description: `استحقاق قيمة حجز الفندق على العميل`, currency: customer_currency || hotelBookingCur },
-        { account_code: "42001", debit: 0, credit: sell, description: `ايرادات عمولة مبيعات حجوزات الفنادق`, currency: customer_currency || hotelBookingCur }
-      ];
-      if (cost > 0) {
-        lines.push(
-          { account_code: "52000", debit: cost, credit: 0, description: `تكلفة حجز الفندق`, currency: supplier_currency || hotelBookingCur },
-          { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات الفندق / المورد`, currency: supplier_currency || hotelBookingCur }
-        );
-        if (supplier_payment_method === 'cash') {
-          lines.push(
-            { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي للمورد/الفندق`, currency: supplier_currency || hotelBookingCur },
-            { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق للمورد/الفندق`, currency: supplier_currency || hotelBookingCur }
-          );
-        }
-      }
-      if (paid > 0) {
-        const debitAcc = payment_method === 'bank' ? '11120' : '11100';
-        lines.push(
-          { account_code: debitAcc, debit: paid, credit: 0, description: `تحصيل قيمة حجز الفندق`, currency: customer_currency || hotelBookingCur },
-          { account_code: custAcc, debit: 0, credit: paid, description: `سداد من العميل`, currency: customer_currency || hotelBookingCur }
-        );
-      }
+      const lines = buildTravelJournalLines({
+        sell, cost, custPayMethod: payment_method || 'cash', paid,
+        suppPayMethod: supplier_payment_method || 'credit', sPaid,
+        custAcc, suppAcc, revenueAcc: "42001", expenseAcc: "52000",
+        custCur: customer_currency || hotelBookingCur, suppCur: supplier_currency || hotelBookingCur,
+        custStmt: customer_statement || `تعديل حجز فندق ${finalHotelName} - مرجع: ${booking_ref}`,
+        suppStmt: supplier_statement || `تكلفة حجز فندق ${finalHotelName} - مرجع: ${booking_ref}`
+      });
+
       syncJournalEntryForSource({
         sourceType: "hotel",
         sourceId: Number(req.params.id),

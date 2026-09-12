@@ -764,7 +764,8 @@ router.get("/accounting/accounts/:id/ledger", (req, res) => {
             SELECT id, booking_number, ticket_number, cost_price, selling_price, supplier_currency,
                    origin_city, destination_city, departure_date, created_at, notes, passenger_name, company_name
             FROM travel_bus_bookings
-            WHERE company_id = ? OR company_name = ?
+            WHERE (company_id = ? OR company_name = ?)
+              AND COALESCE(supplier_payment_method, '') NOT IN ('cash', 'bank', 'نقداً', 'تحويل بنكي')
           `).all(tc.id, tc.name) as any[];
 
           const existingBookingIds = new Set(
@@ -1605,6 +1606,10 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
 
       // 1. Flight / Travel Bookings
       try {
+        const existingFlightDocIds = new Set(
+          transactions.filter(t => t.source_type === "booking" || t.source_type === "flight_booking" || t.source_type === "travel_booking" || t.source === "travel_booking" || t.source === "booking").map(t => String(t.source_doc_id || t.source_id || ""))
+        );
+
         const bookings = db.prepare(`
           SELECT id, booking_number, ticket_number, pnr, selling_price, paid_amount, status, issue_date, notes, created_at, 
                  COALESCE(currency, customer_currency, 'SAR') as currency
@@ -1613,6 +1618,7 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
         `).all(party_id) as any[];
 
         bookings.forEach(b => {
+          if (existingFlightDocIds.has(String(b.id))) return;
           const dateStr = b.issue_date || (b.created_at ? b.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10));
           // Selling transaction (Debit)
           transactions.push({
@@ -1649,6 +1655,10 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
 
       // 2. Visa Bookings
       try {
+        const existingVisaDocIds = new Set(
+          transactions.filter(t => t.source_type === "visa" || t.source_type === "travel_visa" || t.source === "visa" || t.source === "travel_visa").map(t => String(t.source_doc_id || t.source_id || ""))
+        );
+
         const visas = db.prepare(`
           SELECT id, visa_number, application_number, country, visa_type, selling_price, paid_amount, status, application_date, notes, created_at, customer_currency
           FROM travel_visas
@@ -1656,6 +1666,7 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
         `).all(party_id) as any[];
 
         visas.forEach(v => {
+          if (existingVisaDocIds.has(String(v.id))) return;
           const dateStr = v.application_date || (v.created_at ? v.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10));
           transactions.push({
             date: dateStr,
@@ -1690,6 +1701,10 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
 
       // 3. Hotel Bookings
       try {
+        const existingHotelDocIds = new Set(
+          transactions.filter(t => t.source_type === "hotel" || t.source_type === "travel_hotel" || t.source === "hotel" || t.source === "travel_hotel").map(t => String(t.source_doc_id || t.source_id || ""))
+        );
+
         const hotels = db.prepare(`
           SELECT id, booking_ref, hotel_name, city, selling_price, paid_amount, status, issue_date, notes, created_at, customer_currency
           FROM travel_hotels
@@ -1697,6 +1712,7 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
         `).all(party_id) as any[];
 
         hotels.forEach(h => {
+          if (existingHotelDocIds.has(String(h.id))) return;
           const dateStr = h.issue_date || (h.created_at ? h.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10));
           transactions.push({
             date: dateStr,
@@ -1731,13 +1747,18 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
 
       // 4. Bus Bookings
       try {
+        const existingBusDocIds = new Set(
+          transactions.filter(t => t.source_type === "bus_booking" || t.source_type === "travel_bus_booking" || t.source === "bus_booking" || t.source === "travel_bus_booking").map(t => String(t.source_doc_id || t.source_id || ""))
+        );
+
         const busBookings = db.prepare(`
           SELECT id, booking_number, ticket_number, origin_city, destination_city, selling_price, departure_date, created_at, notes, issue_date, customer_currency
           FROM travel_bus_bookings
-          WHERE customer_id = ?
+          WHERE customer_id = ? AND COALESCE(payment_method, '') NOT IN ('cash', 'bank', 'نقداً', 'تحويل بنكي')
         `).all(party_id) as any[];
 
         busBookings.forEach(bb => {
+          if (existingBusDocIds.has(String(bb.id))) return;
           const dateStr = bb.issue_date || bb.departure_date || (bb.created_at ? bb.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10));
           transactions.push({
             date: dateStr,
@@ -1757,6 +1778,10 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
 
       // 5. Travel Insurances
       try {
+        const existingInsuranceDocIds = new Set(
+          transactions.filter(t => t.source_type === "insurance" || t.source_type === "travel_insurance" || t.source === "insurance" || t.source === "travel_insurance").map(t => String(t.source_doc_id || t.source_id || ""))
+        );
+
         const insurances = db.prepare(`
           SELECT id, policy_number, insurance_company, coverage_type, selling_price, created_at, notes, start_date
           FROM travel_insurances
@@ -1764,6 +1789,7 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
         `).all(party_id) as any[];
 
         insurances.forEach(ins => {
+          if (existingInsuranceDocIds.has(String(ins.id))) return;
           const dateStr = ins.start_date || (ins.created_at ? ins.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10));
           transactions.push({
             date: dateStr,
@@ -1806,13 +1832,19 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
 
       // 1. Bus Bookings for Supplier / Transport Company
       try {
+        const existingBusDocIds = new Set(
+          transactions.filter(t => t.source_type === "bus_booking" || t.source_type === "travel_bus_booking" || t.source === "bus_booking" || t.source === "travel_bus_booking").map(t => String(t.source_doc_id || t.source_id || ""))
+        );
+
         const busBookings = db.prepare(`
           SELECT id, booking_number, ticket_number, origin_city, destination_city, cost_price, supplier_currency, departure_date, created_at, notes, issue_date
           FROM travel_bus_bookings
-          WHERE company_id = ? OR company_name = ? OR company_id IN (SELECT id FROM travel_transport_companies WHERE id = ? OR name = ?) OR company_name IN (SELECT name FROM travel_transport_companies WHERE id = ? OR name = ?)
+          WHERE (company_id = ? OR company_name = ? OR company_id IN (SELECT id FROM travel_transport_companies WHERE id = ? OR name = ?) OR company_name IN (SELECT name FROM travel_transport_companies WHERE id = ? OR name = ?))
+            AND COALESCE(supplier_payment_method, '') NOT IN ('cash', 'bank', 'نقداً', 'تحويل بنكي')
         `).all(party_id, partyName, party_id, partyName, party_id, partyName) as any[];
 
         busBookings.forEach(bb => {
+          if (existingBusDocIds.has(String(bb.id))) return;
           const dateStr = bb.issue_date || bb.departure_date || (bb.created_at ? bb.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10));
           transactions.push({
             date: dateStr,
@@ -1832,6 +1864,10 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
 
       // 2. Visa Bookings for Supplier / Office
       try {
+        const existingVisaDocIds = new Set(
+          transactions.filter(t => t.source_type === "visa" || t.source_type === "travel_visa" || t.source === "visa" || t.source === "travel_visa").map(t => String(t.source_doc_id || t.source_id || ""))
+        );
+
         const visas = db.prepare(`
           SELECT id, visa_number, application_number, country, visa_type, cost_price, supplier_currency, application_date, notes, created_at
           FROM travel_visas
@@ -1839,6 +1875,7 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
         `).all(party_id, partyName) as any[];
 
         visas.forEach(v => {
+          if (existingVisaDocIds.has(String(v.id))) return;
           const dateStr = v.application_date || (v.created_at ? v.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10));
           transactions.push({
             date: dateStr,
@@ -1935,7 +1972,8 @@ router.get("/accounting/statement/:party_type/:party_id", (req, res) => {
               SELECT id, booking_number, ticket_number, cost_price, selling_price, supplier_currency,
                      origin_city, destination_city, departure_date, created_at, notes, passenger_name, company_name
               FROM travel_bus_bookings
-              WHERE company_id = ? OR company_name = ?
+              WHERE (company_id = ? OR company_name = ?)
+                AND COALESCE(supplier_payment_method, '') NOT IN ('cash', 'bank', 'نقداً', 'تحويل بنكي')
             `).all(tc.id, tc.name) as any[];
 
             const existingBookingIds = new Set(

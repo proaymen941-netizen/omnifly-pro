@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, createDoubleEntryJournal, updateDoubleEntryJournal, deleteDoubleEntryJournal, logAudit, syncSupplierAccounts, ensureTravelBusBookingsColumns } from "../lib/sqlite";
 import { getAuthUser } from "./auth";
 import { getCustomerAccountCode, getSupplierAccountCode } from "./customers";
-import { syncJournalEntryForSource } from "./travel";
+import { syncJournalEntryForSource, buildTravelJournalLines } from "./travel";
 
 const router = Router();
 
@@ -261,7 +261,7 @@ router.get("/travel/transport-companies/:id/statement", (req, res) => {
   if (!company) { res.status(404).json({ error: "شركة النقل غير موجودة" }); return; }
 
   const transports = db.prepare("SELECT * FROM travel_transports WHERE company_id = ? ORDER BY id DESC").all(compId);
-  const busBookings = db.prepare("SELECT * FROM travel_bus_bookings WHERE company_id = ? OR company_name = ? ORDER BY id DESC").all(compId, company.name);
+  const busBookings = db.prepare("SELECT * FROM travel_bus_bookings WHERE (company_id = ? OR company_name = ?) AND COALESCE(supplier_payment_method, '') NOT IN ('cash', 'bank', 'نقداً', 'تحويل بنكي') ORDER BY id DESC").all(compId, company.name);
   
   const totalCostTransports = ((transports as any[]) || []).reduce((sum, t) => sum + (Number(t.cost_price) || 0), 0);
   const totalCostBuses = ((busBookings as any[]) || []).reduce((sum, b) => sum + (Number(b.cost_price) || 0), 0);
@@ -288,7 +288,7 @@ router.get("/travel/transport-companies/:id/statement", (req, res) => {
       totalCost,
       totalDebits,
       totalCredits,
-      balance: company.balance !== undefined ? company.balance : (balance || totalCost)
+      balance: journalEntries.length > 0 ? balance : (company.balance || totalCost)
     },
     transports,
     busBookings,
@@ -739,29 +739,15 @@ router.post("/travel/bus-bookings", (req, res) => {
       const custAcc = getCustomerAccountCode(customer_id);
       const suppAcc = getSupplierAccountCode(finalCompanyId);
       const busCur = customer_currency || supplier_currency || 'SAR';
-      const lines: any[] = [
-        { account_code: custAcc, debit: sell, credit: 0, description: `استحقاق قيمة تذكرة النقل البري على العميل`, currency: busCur },
-        { account_code: "44001", debit: 0, credit: sell, description: `ايرادات عمولة مبيعات حجوزات النقل البري`, currency: busCur }
-      ];
-      if (cost > 0) {
-        lines.push(
-          { account_code: "54000", debit: cost, credit: 0, description: `تكلفة تذكرة النقل البري / الباص`, currency: supplier_currency || busCur },
-          { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات شركة النقل / المورد`, currency: supplier_currency || busCur }
-        );
-        if (supplier_payment_method === 'cash') {
-          lines.push(
-            { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي لشركة النقل البري / الباص`, currency: supplier_currency || busCur },
-            { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق لشركة النقل البري / الباص`, currency: supplier_currency || busCur }
-          );
-        }
-      }
-      if (paid > 0) {
-        const debitAcc = payment_method === 'bank' ? '11120' : '11100';
-        lines.push(
-          { account_code: debitAcc, debit: paid, credit: 0, description: `تحصيل قيمة تذكرة النقل البري`, currency: busCur },
-          { account_code: custAcc, debit: 0, credit: paid, description: `سداد من العميل`, currency: busCur }
-        );
-      }
+      const lines = buildTravelJournalLines({
+        sell, cost, custPayMethod: payment_method || 'cash', paid,
+        suppPayMethod: supplier_payment_method || 'credit', sPaid,
+        custAcc, suppAcc, revenueAcc: "44001", expenseAcc: "54000",
+        custCur: customer_currency || busCur, suppCur: supplier_currency || busCur,
+        custStmt: customer_statement || `حجز تذكرة نقل بري - ${genTicketNumber || genBookingNumber}`,
+        suppStmt: supplier_statement || `تكلفة حجز تذكرة نقل بري - ${genTicketNumber || genBookingNumber}`
+      });
+
       syncJournalEntryForSource({
         sourceType: "bus_booking",
         sourceId: Number(info.lastInsertRowid),
@@ -864,29 +850,15 @@ router.put("/travel/bus-bookings/:id", (req, res) => {
       const custAcc = getCustomerAccountCode(customer_id);
       const suppAcc = getSupplierAccountCode(finalCompanyId);
       const busCur = customer_currency || supplier_currency || 'SAR';
-      const lines: any[] = [
-        { account_code: custAcc, debit: sell, credit: 0, description: `استحقاق قيمة تذكرة النقل البري على العميل`, currency: busCur },
-        { account_code: "44001", debit: 0, credit: sell, description: `ايرادات عمولة مبيعات حجوزات النقل البري`, currency: busCur }
-      ];
-      if (cost > 0) {
-        lines.push(
-          { account_code: "54000", debit: cost, credit: 0, description: `تكلفة تذكرة النقل البري / الباص`, currency: supplier_currency || busCur },
-          { account_code: suppAcc, debit: 0, credit: cost, description: `مستحقات شركة النقل / المورد`, currency: supplier_currency || busCur }
-        );
-        if (supplier_payment_method === 'cash') {
-          lines.push(
-            { account_code: suppAcc, debit: cost, credit: 0, description: `سداد نقدي لشركة النقل البري / الباص`, currency: supplier_currency || busCur },
-            { account_code: "11100", debit: 0, credit: cost, description: `صرف نقدي من الصندوق لشركة النقل البري / الباص`, currency: supplier_currency || busCur }
-          );
-        }
-      }
-      if (paid > 0) {
-        const debitAcc = payment_method === 'bank' ? '11120' : '11100';
-        lines.push(
-          { account_code: debitAcc, debit: paid, credit: 0, description: `تحصيل قيمة تذكرة النقل البري`, currency: busCur },
-          { account_code: custAcc, debit: 0, credit: paid, description: `سداد من العميل`, currency: busCur }
-        );
-      }
+      const lines = buildTravelJournalLines({
+        sell, cost, custPayMethod: payment_method || 'cash', paid,
+        suppPayMethod: supplier_payment_method || 'credit', sPaid,
+        custAcc, suppAcc, revenueAcc: "44001", expenseAcc: "54000",
+        custCur: customer_currency || busCur, suppCur: supplier_currency || busCur,
+        custStmt: customer_statement || `تعديل حجز تذكرة نقل بري - ${ticket_number || booking_number}`,
+        suppStmt: supplier_statement || `تكلفة حجز تذكرة نقل بري - ${ticket_number || booking_number}`
+      });
+
       syncJournalEntryForSource({
         sourceType: "bus_booking",
         sourceId: Number(req.params.id),
