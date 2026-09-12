@@ -1672,7 +1672,13 @@ router.post("/travel/visas", (req, res) => {
   res.status(201).json(newVisa);
   } catch (err: any) {
     console.error("Error creating visa:", err);
-    res.status(500).json({ error: err.message });
+    let errMsg = err.message;
+    if (errMsg.includes("FOREIGN KEY constraint failed")) {
+      errMsg = "فشل الحفظ بسبب عدم تطابق الحسابات أو البيانات المرتبطة (مثل العميل أو المسافر أو المورد) في النظام. يرجى التحقق من صحة المدخلات.";
+    } else if (errMsg.includes("UNIQUE constraint failed")) {
+      errMsg = "هذا الرقم أو المعاملة مسجلة بالفعل في النظام ومكررة.";
+    }
+    res.status(500).json({ error: errMsg });
   }
 });
 
@@ -1807,7 +1813,13 @@ router.put("/travel/visas/:id", (req, res) => {
   res.json(updated);
   } catch (err: any) {
     console.error("Error updating visa:", err);
-    res.status(500).json({ error: err.message });
+    let errMsg = err.message;
+    if (errMsg.includes("FOREIGN KEY constraint failed")) {
+      errMsg = "فشل تحديث المعاملة بسبب عدم تطابق الحسابات أو البيانات المرتبطة في النظام. يرجى التأكد من صحة اختيار العميل أو المسافر أو المورد.";
+    } else if (errMsg.includes("UNIQUE constraint failed")) {
+      errMsg = "فشل التحديث لأن القيمة المدخلة (مثل رقم التأشيرة أو المعاملة) مكررة وموجودة بالفعل في النظام.";
+    }
+    res.status(500).json({ error: errMsg });
   }
 });
 

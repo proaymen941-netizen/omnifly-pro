@@ -5522,6 +5522,239 @@ export function ensureTravelVisasColumns() {
   }
 }
 
+export function fixTravelForeignKeys() {
+  try {
+    // 1. Check travel_visas foreign keys
+    const visasFks = db.prepare("PRAGMA foreign_key_list(travel_visas)").all() as any[];
+    const hasVisaSuppFk = visasFks.some(fk => fk.table === 'travel_partner_offices' && fk.from === 'supplier_office_id');
+
+    if (hasVisaSuppFk) {
+      console.log("Migrating travel_visas schema to remove supplier_office_id foreign key constraint...");
+      db.transaction(() => {
+        db.pragma("foreign_keys = OFF");
+        
+        // Backup
+        db.exec("ALTER TABLE travel_visas RENAME TO travel_visas_old");
+        
+        // Create new table
+        db.exec(`
+          CREATE TABLE travel_visas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            visa_number TEXT UNIQUE,
+            customer_id INTEGER REFERENCES customers(id),
+            passenger_id INTEGER REFERENCES travel_passengers(id),
+            country TEXT NOT NULL,
+            visa_type TEXT DEFAULT 'سياحية',
+            status TEXT DEFAULT 'under_process',
+            application_date TEXT,
+            expiry_date TEXT,
+            cost_price REAL DEFAULT 0,
+            selling_price REAL DEFAULT 0,
+            missing_docs TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            application_number TEXT,
+            expected_travel_date TEXT,
+            duration_days INTEGER DEFAULT 30,
+            office_fees REAL DEFAULT 0,
+            paid_amount REAL DEFAULT 0,
+            remaining_balance REAL DEFAULT 0,
+            responsible_employee TEXT,
+            embassy_entity TEXT,
+            supplier_agent TEXT,
+            checklist_passport INTEGER DEFAULT 0,
+            checklist_photos INTEGER DEFAULT 0,
+            checklist_hotel INTEGER DEFAULT 0,
+            checklist_ticket INTEGER DEFAULT 0,
+            checklist_bank INTEGER DEFAULT 0,
+            checklist_job_letter INTEGER DEFAULT 0,
+            checklist_insurance INTEGER DEFAULT 0,
+            checklist_extra INTEGER DEFAULT 0,
+            issued_visa_number TEXT,
+            issue_date TEXT,
+            rejection_reason TEXT,
+            rejection_date TEXT,
+            delivered_to TEXT,
+            delivery_date TEXT,
+            delivery_method TEXT,
+            delivery_notes TEXT,
+            border_number TEXT,
+            service_voucher_no TEXT,
+            supplier_office_id INTEGER, -- Removed references
+            supplier_office_name TEXT,
+            customer_currency TEXT DEFAULT 'SAR',
+            customer_statement TEXT,
+            supplier_currency TEXT DEFAULT 'SAR',
+            supplier_statement TEXT,
+            agency_commission REAL DEFAULT 0,
+            commission_currency TEXT DEFAULT 'SAR',
+            exchange_rate REAL DEFAULT 1,
+            account_entry_id INTEGER,
+            outward_date TEXT,
+            batch_number TEXT,
+            outward_voucher_no TEXT,
+            inward_date TEXT,
+            inward_note TEXT,
+            inward_status TEXT,
+            department TEXT DEFAULT 'عام',
+            delivery_type TEXT DEFAULT 'باليد',
+            payment_method TEXT DEFAULT 'cash',
+            payment_status TEXT DEFAULT 'paid',
+            invoice_number TEXT,
+            tax_amount REAL DEFAULT 0,
+            supplier_payment_method TEXT DEFAULT 'credit',
+            supplier_payment_status TEXT DEFAULT 'unpaid',
+            supplier_paid_amount REAL DEFAULT 0,
+            supplier_remaining_balance REAL DEFAULT 0
+          )
+        `);
+
+        // Copy data
+        db.exec(`
+          INSERT INTO travel_visas (
+            id, visa_number, customer_id, passenger_id, country, visa_type, status,
+            application_date, expiry_date, cost_price, selling_price, missing_docs, notes, created_at,
+            application_number, expected_travel_date, duration_days, office_fees, paid_amount, remaining_balance,
+            responsible_employee, embassy_entity, supplier_agent, checklist_passport, checklist_photos, checklist_hotel,
+            checklist_ticket, checklist_bank, checklist_job_letter, checklist_insurance, checklist_extra,
+            issued_visa_number, issue_date, rejection_reason, rejection_date, delivered_to, delivery_date,
+            delivery_method, delivery_notes, border_number, service_voucher_no, supplier_office_id, supplier_office_name,
+            customer_currency, customer_statement, supplier_currency, supplier_statement, agency_commission,
+            commission_currency, exchange_rate, account_entry_id, outward_date, batch_number, outward_voucher_no,
+            inward_date, inward_note, inward_status, department, delivery_type, payment_method, payment_status,
+            invoice_number, tax_amount, supplier_payment_method, supplier_payment_status, supplier_paid_amount,
+            supplier_remaining_balance
+          )
+          SELECT 
+            id, visa_number, customer_id, passenger_id, country, visa_type, status,
+            application_date, expiry_date, cost_price, selling_price, missing_docs, notes, created_at,
+            application_number, expected_travel_date, duration_days, office_fees, paid_amount, remaining_balance,
+            responsible_employee, embassy_entity, supplier_agent, checklist_passport, checklist_photos, checklist_hotel,
+            checklist_ticket, checklist_bank, checklist_job_letter, checklist_insurance, checklist_extra,
+            issued_visa_number, issue_date, rejection_reason, rejection_date, delivered_to, delivery_date,
+            delivery_method, delivery_notes, border_number, service_voucher_no, supplier_office_id, supplier_office_name,
+            customer_currency, customer_statement, supplier_currency, supplier_statement, agency_commission,
+            commission_currency, exchange_rate, account_entry_id, outward_date, batch_number, outward_voucher_no,
+            inward_date, inward_note, inward_status, department, delivery_type, payment_method, payment_status,
+            invoice_number, tax_amount, supplier_payment_method, supplier_payment_status, supplier_paid_amount,
+            supplier_remaining_balance
+          FROM travel_visas_old
+        `);
+
+        // Drop backup
+        db.exec("DROP TABLE travel_visas_old");
+        db.pragma("foreign_keys = ON");
+      })();
+      console.log("travel_visas schema migrated successfully.");
+    }
+
+    // 2. Check travel_hotels foreign keys
+    const hotelsFks = db.prepare("PRAGMA foreign_key_list(travel_hotels)").all() as any[];
+    const hasHotelSuppFk = hotelsFks.some(fk => fk.table === 'travel_partner_offices' && fk.from === 'supplier_office_id');
+
+    if (hasHotelSuppFk) {
+      console.log("Migrating travel_hotels schema to remove supplier_office_id foreign key constraint...");
+      db.transaction(() => {
+        db.pragma("foreign_keys = OFF");
+        
+        // Backup
+        db.exec("ALTER TABLE travel_hotels RENAME TO travel_hotels_old");
+        
+        // Create new table
+        db.exec(`
+          CREATE TABLE travel_hotels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            booking_ref TEXT UNIQUE,
+            customer_id INTEGER REFERENCES customers(id),
+            passenger_id INTEGER REFERENCES travel_passengers(id),
+            hotel_name TEXT NOT NULL,
+            city_country TEXT NOT NULL,
+            check_in TEXT,
+            check_out TEXT,
+            room_type TEXT DEFAULT 'مزدوجة',
+            nights INTEGER DEFAULT 1,
+            cost_price REAL DEFAULT 0,
+            selling_price REAL DEFAULT 0,
+            status TEXT DEFAULT 'confirmed',
+            notes TEXT,
+            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            voucher_number TEXT,
+            hotel_db_id INTEGER REFERENCES travel_hotels_db(id),
+            country TEXT,
+            city TEXT,
+            customer_days INTEGER DEFAULT 1,
+            supplier_days INTEGER DEFAULT 1,
+            customer_currency TEXT DEFAULT 'SAR',
+            supplier_currency TEXT DEFAULT 'SAR',
+            commission_currency TEXT DEFAULT 'SAR',
+            customer_statement TEXT,
+            supplier_statement TEXT,
+            commission_statement TEXT,
+            commission REAL DEFAULT 0,
+            profit REAL DEFAULT 0,
+            rooms_count INTEGER DEFAULT 1,
+            guests_count INTEGER DEFAULT 1,
+            meal_plan TEXT DEFAULT 'إفطار شامل (Bed & Breakfast)',
+            payment_method TEXT DEFAULT 'cash',
+            payment_status TEXT DEFAULT 'paid',
+            paid_amount REAL DEFAULT 0,
+            remaining_balance REAL DEFAULT 0,
+            supplier_payment_method TEXT DEFAULT 'credit',
+            supplier_payment_status TEXT DEFAULT 'unpaid',
+            supplier_paid_amount REAL DEFAULT 0,
+            supplier_remaining_balance REAL DEFAULT 0,
+            guest_name TEXT,
+            guest_phone TEXT,
+            guest_passport TEXT,
+            confirmation_number TEXT,
+            issue_date TEXT,
+            customer_name TEXT,
+            supplier_office_id INTEGER, -- Removed references
+            supplier_office_name TEXT,
+            supplier_id INTEGER,
+            supplier_name TEXT
+          )
+        `);
+
+        // Copy data
+        db.exec(`
+          INSERT INTO travel_hotels (
+            id, booking_ref, customer_id, passenger_id, hotel_name, city_country, check_in, check_out,
+            room_type, nights, cost_price, selling_price, status, notes, created_at,
+            voucher_number, hotel_db_id, country, city, customer_days, supplier_days,
+            customer_currency, supplier_currency, commission_currency, customer_statement,
+            supplier_statement, commission_statement, commission, profit, rooms_count, guests_count,
+            meal_plan, payment_method, payment_status, paid_amount, remaining_balance,
+            supplier_payment_method, supplier_payment_status, supplier_paid_amount,
+            supplier_remaining_balance, guest_name, guest_phone, guest_passport,
+            confirmation_number, issue_date, customer_name, supplier_office_id,
+            supplier_office_name, supplier_id, supplier_name
+          )
+          SELECT 
+            id, booking_ref, customer_id, passenger_id, hotel_name, city_country, check_in, check_out,
+            room_type, nights, cost_price, selling_price, status, notes, created_at,
+            voucher_number, hotel_db_id, country, city, customer_days, supplier_days,
+            customer_currency, supplier_currency, commission_currency, customer_statement,
+            supplier_statement, commission_statement, commission, profit, rooms_count, guests_count,
+            meal_plan, payment_method, payment_status, paid_amount, remaining_balance,
+            supplier_payment_method, supplier_payment_status, supplier_paid_amount,
+            supplier_remaining_balance, guest_name, guest_phone, guest_passport,
+            confirmation_number, issue_date, customer_name, supplier_office_id,
+            supplier_office_name, supplier_id, supplier_name
+          FROM travel_hotels_old
+        `);
+
+        // Drop backup
+        db.exec("DROP TABLE travel_hotels_old");
+        db.pragma("foreign_keys = ON");
+      })();
+      console.log("travel_hotels schema migrated successfully.");
+    }
+  } catch (err: any) {
+    console.error("Error migrating travel schemas:", err);
+  }
+}
+
 initSchema();
 runMigrations();
 seedData();
@@ -5531,6 +5764,7 @@ ensureUmrahPilgrimsData();
 ensureTravelHotelsColumns();
 ensureTravelBusBookingsColumns();
 ensureTravelVisasColumns();
+fixTravelForeignKeys();
 
 export function createDoubleEntryJournal(
   entryDate: string,
