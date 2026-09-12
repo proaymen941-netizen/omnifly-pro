@@ -312,18 +312,15 @@ export default function TravelHotelsPage() {
   const handleSellingPriceChange = (val: string) => {
     const sell = Number(val || 0);
     setForm(f => {
-      let paid = f.paid_amount;
-      let rem = f.remaining_balance;
-      if (f.payment_status === 'paid') {
-        paid = String(sell);
-        rem = "0";
-      } else if (f.payment_status === 'unpaid') {
-        paid = "0";
-        rem = String(sell);
-      } else {
-        rem = String(Math.max(0, sell - Number(paid || 0)));
+      const paid = Number(f.paid_amount || 0);
+      let status = "unpaid";
+      if (paid >= sell && sell > 0) {
+        status = "paid";
+      } else if (paid > 0) {
+        status = "partial";
       }
-      return { ...f, selling_price: val, paid_amount: paid, remaining_balance: rem };
+      const rem = String(Math.max(0, sell - paid));
+      return { ...f, selling_price: val, payment_status: status, remaining_balance: rem };
     });
   };
 
@@ -343,18 +340,15 @@ export default function TravelHotelsPage() {
   const handleCostPriceChange = (val: string) => {
     const cost = Number(val || 0);
     setForm(f => {
-      let paid = f.supplier_paid_amount;
-      let rem = f.supplier_remaining_balance;
-      if (f.supplier_payment_status === 'paid') {
-        paid = String(cost);
-        rem = "0";
-      } else if (f.supplier_payment_status === 'unpaid') {
-        paid = "0";
-        rem = String(cost);
-      } else {
-        rem = String(Math.max(0, cost - Number(paid || 0)));
+      const paid = Number(f.supplier_paid_amount || 0);
+      let status = "unpaid";
+      if (paid >= cost && cost > 0) {
+        status = "paid";
+      } else if (paid > 0) {
+        status = "partial";
       }
-      return { ...f, cost_price: val, supplier_paid_amount: paid, supplier_remaining_balance: rem };
+      const rem = String(Math.max(0, cost - paid));
+      return { ...f, cost_price: val, supplier_payment_status: status, supplier_remaining_balance: rem };
     });
   };
 
@@ -1370,7 +1364,7 @@ export default function TravelHotelsPage() {
                         <CreditCard className="w-3.5 h-3.5 text-blue-600" />
                         سداد وتحصيل الطرف الأول (العميل)
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         <div>
                           <label className="text-[11px] font-bold text-slate-700 mb-0.5 block">طريقة الدفع *</label>
                           <select
@@ -1385,19 +1379,6 @@ export default function TravelHotelsPage() {
                         </div>
 
                         <div>
-                          <label className="text-[11px] font-bold text-slate-700 mb-0.5 block">حالة السداد *</label>
-                          <select
-                            value={form.payment_status}
-                            onChange={e => handleCustomerPaymentStatusChange(e.target.value)}
-                            className="flex h-8 w-full rounded-md border border-input bg-background px-1.5 py-0.5 text-[11px] font-medium"
-                          >
-                            <option value="paid">مدفوع بالكامل</option>
-                            <option value="partial">مدفوع جزئياً</option>
-                            <option value="unpaid">غير مدفوع / آجل</option>
-                          </select>
-                        </div>
-
-                        <div>
                           <label className="text-[11px] font-bold text-slate-700 mb-0.5 block">المبلغ المدفوع</label>
                           <Input
                             type="number"
@@ -1406,10 +1387,18 @@ export default function TravelHotelsPage() {
                             onChange={e => {
                               const p = e.target.value;
                               const sell = Number(form.selling_price || 0);
+                              const paid = Number(p || 0);
+                              let status = "unpaid";
+                              if (paid >= sell && sell > 0) {
+                                status = "paid";
+                              } else if (paid > 0) {
+                                status = "partial";
+                              }
                               setForm(f => ({
                                 ...f,
                                 paid_amount: p,
-                                remaining_balance: String(Math.max(0, sell - Number(p || 0)))
+                                payment_status: status,
+                                remaining_balance: String(Math.max(0, sell - paid))
                               }));
                             }}
                             className="h-8 text-[11px] font-mono font-bold bg-white"
@@ -1547,7 +1536,7 @@ export default function TravelHotelsPage() {
                         <Wallet className="w-3.5 h-3.5 text-amber-600" />
                         سداد الطرف الثاني (الفندق / المورد)
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         <div>
                           <label className="text-[11px] font-bold text-slate-700 mb-0.5 block">طريقة السداد *</label>
                           <select
@@ -1562,19 +1551,6 @@ export default function TravelHotelsPage() {
                         </div>
 
                         <div>
-                          <label className="text-[11px] font-bold text-slate-700 mb-0.5 block">حالة الدفع *</label>
-                          <select
-                            value={form.supplier_payment_status}
-                            onChange={e => handleSupplierPaymentStatusChange(e.target.value)}
-                            className="flex h-8 w-full rounded-md border border-input bg-background px-1.5 py-0.5 text-[11px] font-medium"
-                          >
-                            <option value="unpaid">غير مدفوع / آجل</option>
-                            <option value="paid">مدفوع بالكامل</option>
-                            <option value="partial">مدفوع جزئياً</option>
-                          </select>
-                        </div>
-
-                        <div>
                           <label className="text-[11px] font-bold text-slate-700 mb-0.5 block">المبلغ المسدد</label>
                           <Input
                             type="number"
@@ -1583,10 +1559,18 @@ export default function TravelHotelsPage() {
                             onChange={e => {
                               const p = e.target.value;
                               const cost = Number(form.cost_price || 0);
+                              const paid = Number(p || 0);
+                              let status = "unpaid";
+                              if (paid >= cost && cost > 0) {
+                                status = "paid";
+                              } else if (paid > 0) {
+                                status = "partial";
+                              }
                               setForm(f => ({
                                 ...f,
                                 supplier_paid_amount: p,
-                                supplier_remaining_balance: String(Math.max(0, cost - Number(p || 0)))
+                                supplier_payment_status: status,
+                                supplier_remaining_balance: String(Math.max(0, cost - paid))
                               }));
                             }}
                             className="h-8 text-[11px] font-mono font-bold bg-white"
