@@ -2965,7 +2965,7 @@ router.post("/travel/hotels", (req, res) => {
       const hotelBookingCur = customer_currency || supplier_currency || 'SAR';
       const lines = buildHotelJournalLines({
         sell, cost, custPayMethod: payment_method || 'cash',
-        suppPayMethod: supplier_payment_method || payment_method || 'credit',
+        suppPayMethod: supplier_payment_method || 'credit',
         custAcc, suppAcc, revenueAcc: "42001", expenseAcc: "52000",
         custCur: customer_currency || hotelBookingCur, suppCur: supplier_currency || hotelBookingCur,
         custStmt: customer_statement || `حجز فندق ${finalHotelName} - مرجع: ${ref}`,
@@ -3066,7 +3066,7 @@ router.put("/travel/hotels/:id", (req, res) => {
       const hotelBookingCur = supplier_currency || customer_currency || 'SAR';
       const lines = buildHotelJournalLines({
         sell, cost, custPayMethod: payment_method || 'cash',
-        suppPayMethod: supplier_payment_method || payment_method || 'credit',
+        suppPayMethod: supplier_payment_method || 'credit',
         custAcc, suppAcc, revenueAcc: "42001", expenseAcc: "52000",
         custCur: customer_currency || hotelBookingCur, suppCur: supplier_currency || hotelBookingCur,
         custStmt: customer_statement || `تعديل حجز فندق ${finalHotelName} - مرجع: ${booking_ref}`,
