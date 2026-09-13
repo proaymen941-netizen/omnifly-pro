@@ -43,6 +43,45 @@ export default function LicensesPage() {
     enabled: isDeveloper
   });
 
+  const addMut = useMutation({
+    mutationFn: () => apiPost("/api/licenses", { client_name: clientName, devices_limit: Number(devicesLimit), expires_at: expiresAt }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["licenses"] }); setClientName(""); toast({ title: "تم إصدار مفتاح التفعيل بنجاح" }); },
+    onError: (e: any) => toast({ variant: "destructive", title: "فشل", description: e.message })
+  });
+
+  const delMut = useMutation({
+    mutationFn: (id: number) => apiDel(`/api/licenses/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["licenses"] });
+      toast({ title: "تم حذف الترخيص بنجاح ✅" });
+    },
+    onError: (e: any) => {
+      toast({ variant: "destructive", title: "فشل حذف الترخيص", description: e.message });
+    }
+  });
+
+  const updateLicMut = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: any }) => apiPatch(`/api/licenses/${id}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["licenses"] });
+      toast({ title: "تم تحديث حالة وبيانات الترخيص بنجاح ✅" });
+    },
+    onError: (e: any) => {
+      toast({ variant: "destructive", title: "فشل تحديث الترخيص", description: e.message });
+    }
+  });
+
+  const removeDeviceMut = useMutation({
+    mutationFn: (deviceId: number) => apiDel(`/api/licenses/devices/${deviceId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["licenses"] });
+      toast({ title: "تم إلغاء ربط الجهاز بنجاح ✅" });
+    },
+    onError: (e: any) => {
+      toast({ variant: "destructive", title: "فشل إلغاء ربط الجهاز", description: e.message });
+    }
+  });
+
   if (!isDeveloper) {
     return (
       <AdminLayout>
@@ -119,45 +158,6 @@ export default function LicensesPage() {
       toast({ variant: "destructive", title: "حدث خطأ" });
     }
   };
-
-  const addMut = useMutation({
-    mutationFn: () => apiPost("/api/licenses", { client_name: clientName, devices_limit: Number(devicesLimit), expires_at: expiresAt }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["licenses"] }); setClientName(""); toast({ title: "تم إصدار مفتاح التفعيل بنجاح" }); },
-    onError: (e: any) => toast({ variant: "destructive", title: "فشل", description: e.message })
-  });
-
-  const delMut = useMutation({
-    mutationFn: (id: number) => apiDel(`/api/licenses/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["licenses"] });
-      toast({ title: "تم حذف الترخيص بنجاح ✅" });
-    },
-    onError: (e: any) => {
-      toast({ variant: "destructive", title: "فشل حذف الترخيص", description: e.message });
-    }
-  });
-
-  const updateLicMut = useMutation({
-    mutationFn: ({ id, body }: { id: number; body: any }) => apiPatch(`/api/licenses/${id}`, body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["licenses"] });
-      toast({ title: "تم تحديث حالة وبيانات الترخيص بنجاح ✅" });
-    },
-    onError: (e: any) => {
-      toast({ variant: "destructive", title: "فشل تحديث الترخيص", description: e.message });
-    }
-  });
-
-  const removeDeviceMut = useMutation({
-    mutationFn: (deviceId: number) => apiDel(`/api/licenses/devices/${deviceId}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["licenses"] });
-      toast({ title: "تم إلغاء ربط الجهاز بنجاح ✅" });
-    },
-    onError: (e: any) => {
-      toast({ variant: "destructive", title: "فشل إلغاء ربط الجهاز", description: e.message });
-    }
-  });
 
   return (
     <AdminLayout>

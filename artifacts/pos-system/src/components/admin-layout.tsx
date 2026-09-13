@@ -965,14 +965,13 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
             {/* Notification Bell */}
             <Link href="/travel-dashboard">
-              <button
-                type="button"
-                className="relative p-2 text-slate-600 hover:text-primary hover:bg-slate-100 rounded-xl transition-colors"
+              <div
+                className="relative p-2 text-slate-600 hover:text-primary hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 title="التنبيهات والإشعارات"
               >
                 <Bell className="w-4 h-4" />
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-              </button>
+              </div>
             </Link>
 
             {/* Quick Header Logout Button */}

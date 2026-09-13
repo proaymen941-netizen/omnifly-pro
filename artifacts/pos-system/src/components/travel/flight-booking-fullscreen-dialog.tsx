@@ -39,8 +39,6 @@ export function FlightBookingFullscreenDialog({
   isSaving,
   onCustomerAdded
 }: FlightBookingFullscreenProps) {
-  if (!open) return null;
-
   // Track index for browsing existing bookings
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
 
