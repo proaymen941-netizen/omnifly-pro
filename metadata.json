@@ -1,0 +1,6 @@
+{
+  "name": "OmniFly Pro",
+  "description": "نظام أومني فلاي برو لإدارة وكالات السفر والسياحة وخدمات التأشيرات والمحاسبة والتقارير المالية المعتمدة",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
