@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, logAudit } from "../lib/sqlite";
-import { getAuthUser } from "./auth";
+import { getAuthUser, checkLicenseStatus } from "./auth";
 
 const router = Router();
 
@@ -10,7 +10,8 @@ function requireDeveloper(req: any, res: any): boolean {
     res.status(401).json({ error: "تسجيل الدخول مطلوب" });
     return false;
   }
-  if (user.role !== "developer" && user.username !== "developer") {
+  const isDev = user.role === "developer" || user.username?.toLowerCase() === "developer";
+  if (!isDev) {
     res.status(403).json({ error: "هذه الصفحة والعمليات مخصصة لحساب المطور فقط" });
     return false;
   }
@@ -18,25 +19,8 @@ function requireDeveloper(req: any, res: any): boolean {
 }
 
 router.get("/license/status", (req, res) => {
-  const totalLicensesCount = (db.prepare("SELECT COUNT(*) as c FROM licenses").get() as { c: number })?.c || 0;
-  if (totalLicensesCount === 0) {
-    res.json({ blocked: true, reason: "تم انتهاء فترة ترخيص استخدام النظام أو الجهاز غير مرخص. يرجى التواصل مع المطور لتمديد الترخيص." });
-    return;
-  }
-  const lic = db.prepare("SELECT * FROM licenses ORDER BY id DESC LIMIT 1").get() as any;
-  if (!lic || !lic.active || lic.status === 'suspended') {
-    res.json({ blocked: true, reason: "تم انتهاء فترة ترخيص استخدام النظام أو الجهاز غير مرخص. يرجى التواصل مع المطور لتمديد الترخيص." });
-    return;
-  }
-  const expireDate = new Date(lic.expires_at);
-  const currentDate = new Date();
-  expireDate.setHours(0, 0, 0, 0);
-  currentDate.setHours(0, 0, 0, 0);
-  if (expireDate.getTime() < currentDate.getTime()) {
-    res.json({ blocked: true, reason: "تم انتهاء فترة ترخيص استخدام النظام أو الجهاز غير مرخص. يرجى التواصل مع المطور لتمديد الترخيص." });
-    return;
-  }
-  res.json({ blocked: false });
+  const status = checkLicenseStatus();
+  res.json(status);
 });
 
 router.get("/licenses/active", (req, res) => {

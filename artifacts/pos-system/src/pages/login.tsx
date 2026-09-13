@@ -623,7 +623,19 @@ export default function Login() {
             </div>
 
             {/* Footer */}
-            <div className="bg-slate-50 px-6 py-4 flex items-center justify-end gap-3 border-t border-slate-100">
+            <div className="bg-slate-50 px-6 py-4 flex items-center justify-between gap-3 border-t border-slate-100">
+              <Button 
+                onClick={() => {
+                  setShowLicenseModal(false);
+                  setUsername("developer");
+                  setPassword("dev123");
+                }}
+                variant="default"
+                className="bg-amber-600 hover:bg-amber-700 text-white font-extrabold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 shadow-sm"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                الدخول بحساب المطور لتجديد الترخيص
+              </Button>
               <Button 
                 onClick={() => setShowLicenseModal(false)}
                 variant="outline"

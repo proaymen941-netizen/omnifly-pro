@@ -102,7 +102,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const sidebarNavRef = useRef<HTMLDivElement>(null);
 
-  const isDeveloper = user?.role === "developer" || user?.username === "developer";
+  const isDeveloper = user?.role === "developer" || user?.username?.toLowerCase() === "developer";
   const role = (user?.role || "admin") as string;
   const isAdminOrDev = role === "admin" || role === "developer" || role === "general_manager" || role === "مدير" || role === "مدير عام" || role === "مدير عام الشركة" || user?.username === "admin" || isDeveloper;
   const isCashier = !isAdminOrDev && (role === "cashier" || role === "كاشير");
@@ -687,6 +687,34 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                   </p>
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    setChangePasswordOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-2 py-2 text-[11px] text-amber-400 hover:bg-amber-500/15 rounded-xl transition-colors font-bold border border-amber-500/30"
+                  title="تغيير كلمة السر"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>كلمة السر</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    handleLogout();
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-2 py-2 text-[11px] text-red-400 hover:bg-red-500/20 bg-red-500/10 rounded-xl transition-colors font-bold border border-red-500/30 shadow-xs"
+                  title="تسجيل الخروج"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>تسجيل خروج</span>
+                </button>
+              </div>
             </div>
           </aside>
         </div>
@@ -835,9 +863,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Logged in User Profile Footer */}
-        <div className="p-3 border-t border-slate-800/80 bg-slate-900/80 shrink-0 space-y-2">
+        <div className="p-3 border-t border-slate-800/80 bg-slate-900 shrink-0 space-y-2.5">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-amber-600 text-white flex items-center justify-center font-black text-sm shadow-md border border-white/20">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-amber-600 text-white flex items-center justify-center font-black text-sm shadow-md border border-white/20 shrink-0">
               {user?.name ? user.name.charAt(0) : "م"}
             </div>
             <div className="flex-1 overflow-hidden">
@@ -848,21 +876,24 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-1.5 pt-1">
+          <div className="grid grid-cols-2 gap-2 pt-1">
             <button
+              type="button"
               onClick={() => setChangePasswordOpen(true)}
-              className="flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] text-amber-400 hover:bg-amber-500/15 rounded-xl transition-colors font-bold border border-amber-500/30"
+              className="flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl transition-all font-bold border border-amber-500/30 cursor-pointer shadow-xs"
               title="تغيير كلمة السر"
             >
-              <Lock className="w-3 h-3" />
+              <Lock className="w-3.5 h-3.5" />
               <span>كلمة السر</span>
             </button>
 
             <button
+              type="button"
               onClick={handleLogout}
-              className="flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] text-blue-400 hover:bg-blue-500/15 rounded-xl transition-colors font-bold border border-blue-500/30"
+              className="flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs text-red-300 hover:text-white bg-red-600/20 hover:bg-red-600 rounded-xl transition-all font-bold border border-red-500/40 cursor-pointer shadow-xs"
+              title="تسجيل الخروج من النظام"
             >
-              <LogOut className="w-3 h-3" />
+              <LogOut className="w-3.5 h-3.5" />
               <span>خروج</span>
             </button>
           </div>
@@ -922,6 +953,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               </div>
             </Link>
 
+            {/* Quick Developer Licenses Link */}
+            {isDeveloper && (
+              <Link href="/licenses">
+                <div className="flex items-center gap-1 bg-purple-50 hover:bg-purple-100 border border-purple-300 text-purple-900 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-2xs">
+                  <KeyRound className="w-3.5 h-3.5 text-purple-600" />
+                  <span>🔑 إدارة التراخيص</span>
+                </div>
+              </Link>
+            )}
+
             {/* Notification Bell */}
             <Link href="/travel-dashboard">
               <button
@@ -933,6 +974,17 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
               </button>
             </Link>
+
+            {/* Quick Header Logout Button */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex items-center gap-1 bg-red-50 hover:bg-red-100 text-red-700 hover:text-red-800 border border-red-200 px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow-2xs"
+              title="تسجيل الخروج من النظام"
+            >
+              <LogOut className="w-3.5 h-3.5 text-red-600" />
+              <span className="hidden xs:inline">خروج</span>
+            </button>
           </div>
         </header>
 

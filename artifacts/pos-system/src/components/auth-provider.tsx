@@ -89,7 +89,7 @@ export function ProtectedRoute({ children, requireAdmin = false, requireDevelope
   const [, setLocation] = useLocation();
 
   const role = (user?.role as string) || "";
-  const isDev = role === "developer" || user?.username === "developer";
+  const isDev = role === "developer" || user?.username?.toLowerCase() === "developer";
   
   // Strict admin/manager check for system configuration and user management
   const isStrictAdmin = role === "admin" || role === "manager" || role === "مدير" || role === "general_manager" || role === "مدير عام" || role === "مدير عام الشركة" || user?.username === "admin" || isDev;

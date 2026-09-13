@@ -47,7 +47,7 @@ export function getAuthUser(req: any) {
   }
 }
 
-function checkLicenseStatus() {
+export function checkLicenseStatus() {
   try {
     const totalLicensesCount = (db.prepare("SELECT COUNT(*) as c FROM licenses").get() as { c: number })?.c || 0;
     if (totalLicensesCount === 0) {
@@ -203,12 +203,14 @@ router.get("/auth/me", (req, res) => {
   const user = getAuthUser(req);
   if (!user) { res.status(401).json({ error: "غير مصرح" }); return; }
 
-  if (user.username !== "developer" && user.role !== "developer" && user.role !== "admin") {
+  const isDev = user.username?.toLowerCase() === "developer" || user.role === "developer";
+  if (!isDev) {
     const licenseStatus = checkLicenseStatus();
     if (licenseStatus.blocked) {
       res.status(403).json({
-        error: "license_blocked",
-        message: "يجب التواصل مع إدارة إتقان سوفت من أجل ترخيص الاستخدام 777146387"
+        error: licenseStatus.code || "license_blocked",
+        code: licenseStatus.code || "license_blocked",
+        message: licenseStatus.reason || "تم انتهاء فترة ترخيص استخدام النظام أو الجهاز غير مرخص. يرجى التواصل مع المطور لتمديد الترخيص."
       });
       return;
     }

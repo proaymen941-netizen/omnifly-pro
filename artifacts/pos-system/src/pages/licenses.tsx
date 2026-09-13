@@ -34,8 +34,8 @@ export default function LicensesPage() {
   const [devLogoUrlInput, setDevLogoUrlInput] = useState("");
   const [logoUploading, setLogoUploading] = useState(false);
 
-  // REQUIREMENT: Developer or Admin role can access this page
-  const isDeveloper = user?.role === "developer" || user?.role === "admin" || user?.username === "developer";
+  // REQUIREMENT: Developer account only can access this page
+  const isDeveloper = user?.role === "developer" || user?.username?.toLowerCase() === "developer";
 
   const { data: licenses = [] } = useQuery({
     queryKey: ["licenses"],
