@@ -9,7 +9,7 @@ import {
 } from "recharts";
 
 function fetchWithAuth<T>(url: string): Promise<T> {
-  const token = localStorage.getItem("pos_token") ?? "";
+  const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
   return fetch(url, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
 }
 

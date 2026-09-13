@@ -19,15 +19,23 @@ if (typeof window !== "undefined") {
 
 if (typeof window !== "undefined") {
   try {
-    localStorage.removeItem("pos_token");
-    localStorage.removeItem("token");
+    const sessionToken = sessionStorage.getItem("pos_token");
+    if (!sessionToken) {
+      // Fresh app open or closed window: wipe stale tokens to force login screen
+      localStorage.removeItem("pos_token");
+      localStorage.removeItem("token");
+    } else {
+      // Active session (e.g. page refresh): ensure localStorage is in sync
+      localStorage.setItem("pos_token", sessionToken);
+    }
   } catch (e) {}
 }
 
 setBaseUrl("");
 
 setAuthTokenGetter(() => {
-  return sessionStorage.getItem("pos_token");
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token");
 });
 
 const root = document.getElementById("root");

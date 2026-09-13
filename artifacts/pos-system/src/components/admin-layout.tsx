@@ -182,7 +182,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
     setPwdLoading(true);
     try {
-      const token = sessionStorage.getItem("pos_token") ?? "";
+      const token = (typeof window !== "undefined" ? (sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token")) : "") ?? "";
       const res = await fetch("/api/auth/change-password", {
         method: "POST",
         headers: {
@@ -529,7 +529,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
       onSuccess: () => {
-        sessionStorage.removeItem("pos_token");
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem("pos_token");
+          localStorage.removeItem("pos_token");
+        }
         window.location.href = "/login";
       }
     });

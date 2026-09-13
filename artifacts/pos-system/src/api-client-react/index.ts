@@ -1,7 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 let baseUrl = "";
-let tokenGetter: () => string | null = () => sessionStorage.getItem("pos_token");
+let tokenGetter: () => string | null = () => {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token");
+};
 
 export function setBaseUrl(url: string) {
   baseUrl = url;
@@ -245,11 +248,20 @@ export function useGetMe(options: { query?: any } = {}) {
 }
 
 export function useLogin() {
+  const qc = useQueryClient();
   return useMutation<{ token: string; user: User }, Error, { data: any }>({
     mutationFn: (variables) => apiRequest<{ token: string; user: User }>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify(variables.data),
     }),
+    onSuccess: (data) => {
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("pos_token", data.token);
+        localStorage.setItem("pos_token", data.token);
+      }
+      qc.setQueryData(getGetMeQueryKey(), data.user);
+      qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
+    },
   });
 }
 
@@ -258,6 +270,11 @@ export function useLogout() {
   return useMutation<any, Error, void>({
     mutationFn: () => apiRequest("/api/auth/logout", { method: "POST" }),
     onSuccess: () => {
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("pos_token");
+        localStorage.removeItem("pos_token");
+      }
+      qc.setQueryData(getGetMeQueryKey(), null);
       qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
     },
   });

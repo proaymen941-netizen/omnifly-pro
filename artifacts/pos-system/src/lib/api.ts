@@ -1,6 +1,6 @@
 function getAuthToken(): string {
   if (typeof window === "undefined") return "";
-  return localStorage.getItem("pos_token") ?? "";
+  return sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token") || "";
 }
 
 export function fetchAuth(url: string, opts: RequestInit = {}) {

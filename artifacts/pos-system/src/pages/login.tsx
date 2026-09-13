@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useLogin } from "@workspace/api-client-react";
+import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +19,15 @@ import { AppLogo, AppIcon } from "@/components/AppLogo";
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user, login } = useAuth();
   const loginMutation = useLogin();
+
+  // If already authenticated, go directly to travel dashboard
+  useEffect(() => {
+    if (user) {
+      setLocation("/travel-dashboard");
+    }
+  }, [user, setLocation]);
 
   const { data: settings } = useQuery({
     queryKey: ["settings"],
@@ -78,7 +87,11 @@ export default function Login() {
       { data: { username, password } },
       {
         onSuccess: (data) => {
-          localStorage.setItem("pos_token", data.token);
+          login(data.token, data.user);
+          toast({
+            title: "تم تسجيل الدخول بنجاح",
+            description: `أهلاً بك ${data.user?.name || data.user?.username || ""}`,
+          });
           setLocation("/travel-dashboard");
         },
         onError: (err: any) => {

@@ -1,20 +1,28 @@
-import { createContext, useContext, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useGetMe, getGetMeQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "@workspace/api-client-react";
 import { PageLoader } from "@/components/PageLoader";
 
 type AuthContextType = {
   user: User | null;
   isLoading: boolean;
+  login: (token: string, user?: User) => void;
   logout: () => void;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem("pos_token") || localStorage.getItem("pos_token");
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [, setLocation] = useLocation();
-  const token = sessionStorage.getItem("pos_token");
+  const [location, setLocation] = useLocation();
+  const [token, setToken] = useState<string | null>(getStoredToken);
+  const queryClient = useQueryClient();
 
   const { data: user, isLoading, error } = useGetMe({
     query: {
@@ -25,19 +33,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    if (!token || error) {
-      sessionStorage.removeItem("pos_token");
-      setLocation("/login");
+    // If the server returns an explicit authentication error (401/403)
+    if (error && token) {
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("pos_token");
+        localStorage.removeItem("pos_token");
+      }
+      setToken(null);
+      queryClient.setQueryData(getGetMeQueryKey(), null);
+      if (location !== "/login") {
+        setLocation("/login");
+      }
     }
-  }, [token, error, setLocation]);
+  }, [error, token, location, setLocation, queryClient]);
+
+  const login = (newToken: string, newUser?: User) => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("pos_token", newToken);
+      localStorage.setItem("pos_token", newToken);
+    }
+    setToken(newToken);
+    if (newUser) {
+      queryClient.setQueryData(getGetMeQueryKey(), newUser);
+    }
+    queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+  };
 
   const logout = () => {
-    sessionStorage.removeItem("pos_token");
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("pos_token");
+      localStorage.removeItem("pos_token");
+    }
+    setToken(null);
+    queryClient.setQueryData(getGetMeQueryKey(), null);
     setLocation("/login");
   };
 
   return (
-    <AuthContext.Provider value={{ user: user ?? null, isLoading: !!token && isLoading, logout }}>
+    <AuthContext.Provider value={{ user: user ?? null, isLoading: !!token && isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -64,38 +97,48 @@ export function ProtectedRoute({ children, requireAdmin = false, requireDevelope
   // General staff check (any authenticated staff member)
   const isStaff = isStrictAdmin || ["accountant", "محاسب", "sales", "موظف مبيعات", "purchasing", "موظف مشتريات", "storekeeper", "inventory", "أمين مخزن", "hr", "شؤون موظفين", "cashier", "كاشير"].includes(role);
 
+  const storedToken = getStoredToken();
+
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (!storedToken && !isLoading) {
       setLocation("/login");
       return;
     }
     
     if (!isLoading && user) {
-      const path = window.location.pathname;
+      const path = typeof window !== "undefined" ? window.location.pathname : "";
       const isAdminOnlyPath = ["/users", "/audit", "/licenses", "/branches", "/currencies", "/backup-restore", "/settings", "/document-print-settings"].some(p => path.startsWith(p));
       
       if (requireDeveloper && !isDev) {
-        setLocation("/dashboard");
+        setLocation("/travel-dashboard");
       } else if (isAdminOnlyPath && !isStrictAdmin) {
         // Blocks non-admins from sensitive administration routes
-        setLocation("/pos");
+        setLocation("/travel-dashboard");
       } else if (requireAdmin && !isStaff) {
         // General protection for ERP routes
-        setLocation("/pos");
+        setLocation("/travel-dashboard");
       }
     }
-  }, [user, isLoading, requireAdmin, requireDeveloper, isDev, isStrictAdmin, isStaff, setLocation]);
+  }, [user, isLoading, storedToken, requireAdmin, requireDeveloper, isDev, isStrictAdmin, isStaff, setLocation]);
+
+  if (!storedToken) {
+    return null;
+  }
+
+  if (isLoading || !user) {
+    return <PageLoader message="جاري التحقق من الصلاحيات وتجهيز بيئة العمل..." />;
+  }
 
   const path = typeof window !== "undefined" ? window.location.pathname : "";
   const isAdminOnlyPath = ["/users", "/audit", "/licenses", "/branches", "/currencies", "/backup-restore", "/settings", "/document-print-settings"].some(p => path.startsWith(p));
 
-  const hasAccess = !isLoading && user && 
+  const hasAccess = 
     (!requireDeveloper || isDev) && 
     (!isAdminOnlyPath || isStrictAdmin) && 
     (!requireAdmin || isStaff);
 
   if (!hasAccess) {
-    return <PageLoader message="جاري التحقق من الصلاحيات وتجهيز بيئة العمل..." />;
+    return <PageLoader message="جاري التحويل للصفحة المصرحة..." />;
   }
 
   return <>{children}</>;
