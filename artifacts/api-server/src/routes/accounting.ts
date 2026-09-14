@@ -141,6 +141,7 @@ router.get("/accounting/accounts", (req, res) => {
         (SELECT COUNT(*) FROM account_customers WHERE account_id = a.id) as linked_customers_count,
         (SELECT COUNT(*) FROM journal_entry_lines WHERE account_id = a.id) as transactions_count
       FROM accounts a 
+      WHERE (a.code IS NOT NULL AND TRIM(a.code) != '' AND a.name IS NOT NULL AND TRIM(a.name) != '' AND a.name NOT LIKE '%\uFFFD%')
       ORDER BY a.code ASC
     `).all();
     res.json(accounts);
@@ -680,28 +681,152 @@ router.post("/accounting/accounts/bulk-import", (req, res) => {
   }
 
   try {
-    let imported = 0;
     const insertStmt = db.prepare(`
       INSERT OR REPLACE INTO accounts (code, name, type, parent_code, currency, level, balance, active)
       VALUES (?, ?, ?, ?, ?, ?, ?, 1)
     `);
 
-    for (const a of accounts) {
-      if (a.code && a.name) {
+    const validAccounts: any[] = [];
+    const skippedReasons: string[] = [];
+
+    for (let i = 0; i < accounts.length; i++) {
+      const a = accounts[i];
+      const rawCode = String(a.code ?? "").trim();
+      const rawName = String(a.name ?? "").trim();
+
+      // 1. Validation for Code
+      if (!rawCode || rawCode.length === 0) {
+        skippedReasons.push(`سطر ${i + 1}: كود الحساب فارغ`);
+        continue;
+      }
+      if (rawCode.includes("\uFFFD") || /[\x00-\x08\x0E-\x1F]/.test(rawCode)) {
+        skippedReasons.push(`سطر ${i + 1} (${rawCode}): كود الحساب يحتوي على رموز تالفة أو غير مقروءة`);
+        continue;
+      }
+
+      // 2. Validation for Name
+      if (!rawName || rawName.length === 0) {
+        skippedReasons.push(`سطر ${i + 1} (${rawCode}): اسم الحساب فارغ`);
+        continue;
+      }
+      if (rawName.includes("\uFFFD") || /[\x00-\x08\x0E-\x1F]/.test(rawName)) {
+        skippedReasons.push(`سطر ${i + 1} (${rawCode}): اسم الحساب يحتوي على رموز تالفة أو غير مقروءة`);
+        continue;
+      }
+      // Check if name is purely symbols / question marks or mojibake
+      if (/^[\?\s\uFFFD\.\-_]+$/.test(rawName)) {
+        skippedReasons.push(`سطر ${i + 1} (${rawCode}): اسم الحساب غير صالح`);
+        continue;
+      }
+
+      // 3. Normalize Type
+      let normalizedType = String(a.type || "").trim().toLowerCase();
+      if (normalizedType.includes("أصول") || normalizedType.includes("اصول") || normalizedType.includes("أصل") || normalizedType === "asset") {
+        normalizedType = "asset";
+      } else if (normalizedType.includes("خصوم") || normalizedType.includes("التزام") || normalizedType.includes("إلتزام") || normalizedType === "liability") {
+        normalizedType = "liability";
+      } else if (normalizedType.includes("حقوق") || normalizedType.includes("رأس مال") || normalizedType.includes("راس مال") || normalizedType === "equity") {
+        normalizedType = "equity";
+      } else if (normalizedType.includes("إيراد") || normalizedType.includes("ايراد") || normalizedType.includes("مبيع") || normalizedType === "revenue") {
+        normalizedType = "revenue";
+      } else if (normalizedType.includes("مصروف") || normalizedType.includes("مصاريف") || normalizedType.includes("تكاليف") || normalizedType === "expense") {
+        normalizedType = "expense";
+      } else {
+        // Infer from code if possible
+        if (rawCode.startsWith("1")) normalizedType = "asset";
+        else if (rawCode.startsWith("2")) normalizedType = "liability";
+        else if (rawCode.startsWith("3")) normalizedType = "equity";
+        else if (rawCode.startsWith("4")) normalizedType = "revenue";
+        else if (rawCode.startsWith("5")) normalizedType = "expense";
+        else normalizedType = "asset";
+      }
+
+      const parentCode = a.parent_code ? String(a.parent_code).trim() : null;
+      const currency = a.currency ? String(a.currency).trim().toUpperCase() : "YER";
+      const balance = Number(a.balance) || 0;
+      const level = Number(a.level) || (rawCode.length <= 2 ? 1 : rawCode.length <= 4 ? 2 : 3);
+
+      validAccounts.push({
+        code: rawCode,
+        name: rawName,
+        type: normalizedType,
+        parent_code: parentCode,
+        currency,
+        level,
+        balance
+      });
+    }
+
+    if (validAccounts.length === 0) {
+      res.status(400).json({ 
+        error: "لم يتم التعرف على أي حسابات صالحة للاستيراد. البيانات المرفوعة تحتوي على رموز تالفة أو أكواد مفقودة.",
+        skippedCount: skippedReasons.length,
+        skippedReasons
+      });
+      return;
+    }
+
+    const runInsertTx = db.transaction((accs: any[]) => {
+      for (const item of accs) {
         insertStmt.run(
-          String(a.code).trim(),
-          String(a.name).trim(),
-          a.type || "asset",
-          a.parent_code ? String(a.parent_code).trim() : null,
-          a.currency || "YER",
-          Number(a.level) || (String(a.code).length <= 2 ? 1 : String(a.code).length <= 4 ? 2 : 3),
-          Number(a.balance) || 0
+          item.code,
+          item.name,
+          item.type,
+          item.parent_code,
+          item.currency,
+          item.level,
+          item.balance
         );
-        imported++;
+      }
+    });
+
+    runInsertTx(validAccounts);
+
+    res.json({ 
+      success: true, 
+      importedCount: validAccounts.length,
+      skippedCount: skippedReasons.length,
+      skippedReasons: skippedReasons.slice(0, 10)
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Clean Corrupted / Mojibake Accounts ───
+router.post("/accounting/accounts/clean-corrupted", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const allAccounts = db.prepare("SELECT id, code, name FROM accounts").all() as any[];
+    const corruptedIds: number[] = [];
+
+    for (const a of allAccounts) {
+      const code = String(a.code || "").trim();
+      const name = String(a.name || "").trim();
+      let isBad = false;
+
+      if (!code || code.length === 0 || code.includes("\uFFFD")) isBad = true;
+      if (!name || name.length === 0 || name.includes("\uFFFD")) isBad = true;
+      if (/[\x00-\x08\x0E-\x1F]/.test(name) || /[\x00-\x08\x0E-\x1F]/.test(code)) isBad = true;
+      if (/^[\?\s\uFFFD\.\-_]+$/.test(name)) isBad = true;
+
+      if (isBad) {
+        corruptedIds.push(a.id);
       }
     }
 
-    res.json({ success: true, importedCount: imported });
+    let deletedCount = 0;
+    if (corruptedIds.length > 0) {
+      const delStmt = db.prepare("DELETE FROM accounts WHERE id = ?");
+      for (const id of corruptedIds) {
+        try {
+          delStmt.run(id);
+          deletedCount++;
+        } catch {}
+      }
+    }
+
+    res.json({ success: true, cleanedCount: deletedCount });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

@@ -25,6 +25,7 @@ import JournalVoucherModal from "@/components/accounting/JournalVoucherModal";
 import { JournalEntryScreen } from "@/components/accounting/JournalEntryScreen";
 import { ReportViewerModal } from "@/components/ReportViewerModal";
 import { PrintHeader } from "@/components/print-header";
+import { AccountImportModal } from "@/components/accounting/AccountImportModal";
 
 function fetchAuth(url: string, opts: RequestInit = {}) {
   const token = localStorage.getItem("pos_token") ?? "";
@@ -96,10 +97,26 @@ export default function Accounting() {
   const [isSavingOpening, setIsSavingOpening] = useState(false);
 
   /* ─── Queries ─── */
-  const { data: accountsList = [], refetch: refetchAccounts } = useQuery({
+  const { data: rawAccountsList = [], refetch: refetchAccounts } = useQuery({
     queryKey: ["accounts-list"],
     queryFn: () => apiGet("/api/accounting/accounts"),
   });
+
+  const accountsList = useMemo(() => {
+    if (!Array.isArray(rawAccountsList)) return [];
+    return rawAccountsList.filter((a: any) => {
+      const code = String(a.code || "").trim();
+      const name = String(a.name || "").trim();
+      return (
+        code.length > 0 &&
+        name.length > 0 &&
+        !code.includes("\uFFFD") &&
+        !name.includes("\uFFFD") &&
+        !/[\x00-\x08\x0E-\x1F]/.test(code) &&
+        !/[\x00-\x08\x0E-\x1F]/.test(name)
+      );
+    });
+  }, [rawAccountsList]);
 
   const { data: dashboardStats, refetch: refetchDashboard } = useQuery({
     queryKey: ["accounting-dashboard-stats"],
@@ -940,7 +957,6 @@ export default function Accounting() {
   const [showAccountCurrencyDlg, setShowAccountCurrencyDlg] = useState(false);
   const [showSystemCurrencyDlg, setShowSystemCurrencyDlg] = useState(false);
   const [showDeleteAccountConfirmDlg, setShowDeleteAccountConfirmDlg] = useState(false);
-  const [excelImportText, setExcelImportText] = useState("");
   const [isNewAccountMode, setIsNewAccountMode] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
 
@@ -1080,17 +1096,6 @@ export default function Accounting() {
       }));
     },
     onError: (e: any) => toast({ variant: "destructive", title: "فشل إضافة العملة", description: e.message })
-  });
-
-  const bulkImportAccountsMutation = useMutation({
-    mutationFn: (accounts: any[]) => apiPost("/api/accounting/accounts/bulk-import", { accounts }),
-    onSuccess: (res: any) => {
-      toast({ title: `تم استيراد ${res.importedCount} حساب بنجاح في دليل الحسابات` });
-      setShowExcelImportDlg(false);
-      setExcelImportText("");
-      refetchAccounts();
-    },
-    onError: (e: any) => toast({ variant: "destructive", title: "فشل استيراد الحسابات", description: e.message })
   });
 
   const handleSelectAccount = async (acc: any) => {
@@ -2798,7 +2803,7 @@ export default function Accounting() {
                       className="text-xs h-8 px-3 gap-1 font-semibold"
                     >
                       <Upload className="w-3.5 h-3.5 text-blue-600" />
-                      استيراد إكسل
+                      استيراد إكسل / PDF
                     </Button>
                     <Button 
                       variant="secondary" 
@@ -3071,126 +3076,17 @@ export default function Accounting() {
               </DialogContent>
             </Dialog>
 
-            {/* Dialog: Excel & CSV Import */}
-            <Dialog open={showExcelImportDlg} onOpenChange={setShowExcelImportDlg}>
-              <DialogContent dir="rtl" className="max-w-lg">
-                <DialogHeader>
-                  <DialogTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
-                    استيراد دليل الحسابات من إكسل و CSV
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-2 text-xs">
-                  <div className="bg-indigo-50 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-300 p-3 rounded-lg text-xs leading-relaxed">
-                    يمكنك استيراد دليل الحسابات دفعة واحدة إما برفع ملف CSV / Excel أو بلصق البيانات بتنسيق (الرمز,الاسم,النوع,الرمز_الأب).
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="w-full text-xs gap-1.5" 
-                      onClick={() => {
-                        const csvContent = "code,name,type,parent_code\n11101,صندوق الكاشير 1,asset,11100\n11102,صندوق الكاشير 2,asset,11100\n11201,شركة الأفق للسفريات,asset,11200\n11202,وكالة النجم الذهبي,asset,11200\n51001,مصروفات ضيافة وبوفيه,expense,51000";
-                        const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
-                        const url = URL.createObjectURL(blob);
-                        const link = document.createElement("a");
-                        link.setAttribute("href", url);
-                        link.setAttribute("download", "accounts_import_template.csv");
-                        link.style.visibility = "hidden";
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        toast({ title: "تم تنزيل قالب الاستيراد المعتمد بنجاح" });
-                      }}
-                    >
-                      <Download className="w-3.5 h-3.5 text-indigo-600" />
-                      تنزيل القالب المعتمد (CSV Template)
-                    </Button>
-                  </div>
-
-                  <div>
-                    <label className="font-bold block mb-1 text-[11px]">
-                      أو الصق بيانات الحسابات مباشرة (CSV):
-                    </label>
-                    <textarea
-                      rows={4}
-                      value={excelImportText}
-                      onChange={(e) => setExcelImportText(e.target.value)}
-                      placeholder="11101,صندوق الصالة,asset,11100&#10;11205,عميل سفريات VIP,asset,11200"
-                      className="w-full p-2 text-xs font-mono border rounded bg-background"
-                    />
-                  </div>
-
-                  <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-4 text-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                    <input 
-                      type="file" 
-                      id="excel-upload-coa" 
-                      className="hidden" 
-                      accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files.length > 0) {
-                          const file = e.target.files[0];
-                          const reader = new FileReader();
-                          reader.onload = (evt) => {
-                            const text = evt.target?.result as string;
-                            setExcelImportText(text);
-                            toast({ title: `تم تحميل الملف: ${file.name}` });
-                          };
-                          reader.readAsText(file);
-                        }
-                      }}
-                    />
-                    <label htmlFor="excel-upload-coa" className="cursor-pointer flex flex-col items-center">
-                      <div className="bg-indigo-100 dark:bg-indigo-900/30 p-2.5 rounded-full mb-2 text-indigo-600 dark:text-indigo-400">
-                        <Upload className="w-5 h-5" />
-                      </div>
-                      <span className="font-bold text-slate-700 dark:text-slate-300 block text-xs">
-                        انقر هنا لاختيار ملف من جهازك
-                      </span>
-                      <span className="text-[10px] text-slate-500">يدعم صيغ .csv, .txt</span>
-                    </label>
-                  </div>
-                </div>
-                <DialogFooter className="gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setShowExcelImportDlg(false)}>
-                    إلغاء
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={bulkImportAccountsMutation.isPending}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
-                    onClick={() => {
-                      if (!excelImportText.trim()) {
-                        toast({ variant: "destructive", title: "يرجى إدخال أو رفع بيانات للاستيراد" });
-                        return;
-                      }
-                      const lines = excelImportText.trim().split("\n");
-                      const parsedAccounts: any[] = [];
-                      for (const line of lines) {
-                        const parts = line.split(",").map(p => p.trim().replace(/^"|"$/g, ""));
-                        if (parts.length >= 2) {
-                          if (parts[0].toLowerCase() === "code" || parts[0] === "الرمز") continue;
-                          parsedAccounts.push({
-                            code: parts[0],
-                            name: parts[1],
-                            type: parts[2] || "asset",
-                            parent_code: parts[3] || null
-                          });
-                        }
-                      }
-                      if (parsedAccounts.length === 0) {
-                        toast({ variant: "destructive", title: "لم يتم التعرف على أي أسطر صالحة للاستيراد" });
-                        return;
-                      }
-                      bulkImportAccountsMutation.mutate(parsedAccounts);
-                    }}
-                  >
-                    استيراد الآن ({bulkImportAccountsMutation.isPending ? "جاري المعالجة..." : "تنفيذ"})
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            {/* Dialog: Excel, CSV & PDF Smart Import with Preview, Validation, and Mojibake Prevention */}
+            <AccountImportModal
+              open={showExcelImportDlg}
+              onOpenChange={setShowExcelImportDlg}
+              onImportSuccess={() => {
+                refetchAccounts();
+              }}
+              onCleanSuccess={() => {
+                refetchAccounts();
+              }}
+            />
           </TabsContent>
 
           {/* ───────────────────────────────────────────────────────────── */}
