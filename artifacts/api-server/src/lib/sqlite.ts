@@ -5030,9 +5030,7 @@ export function syncCustomerAccounts(): void {
         }
         db.prepare("UPDATE customers SET account_code = ? WHERE id = ?").run(code, cust.id);
       } else {
-        if (existingAcc.name !== cust.name) {
-          db.prepare("UPDATE accounts SET name = ? WHERE code = ?").run(cust.name, code);
-        }
+        // DO NOT rename existing account to customer name! The customer is linked to this account.
       }
     }
   } catch (err) {

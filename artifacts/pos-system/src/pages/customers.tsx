@@ -128,7 +128,7 @@ export default function TravelCustomersPage() {
   useEffect(() => {
     if (modalOpen && subAccounts.length > 0) {
       const hasValidCode = subAccounts.some((a: any) => a.code === form.account_code);
-      if (!hasValidCode) {
+      if (!hasValidCode && form.affiliation_type === "agency") {
         // Default to the first direct child
         const defaultSub = subAccounts.find((a: any) => a.parent_code === parentCode);
         if (defaultSub) {
@@ -543,6 +543,37 @@ export default function TravelCustomersPage() {
               }}
               className="space-y-4 py-2"
             >
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">نوع الارتباط / التبعية *</label>
+                  <select
+                    value={form.affiliation_type}
+                    onChange={e => setForm(f => ({ ...f, affiliation_type: e.target.value, account_code: "" }))}
+                    className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-xs font-bold text-slate-900"
+                  >
+                    <option value="direct">🏢 عميل مباشر (تابع للمكتب)</option>
+                    <option value="agency">🏬 عميل يتبع مكتب / وكيل وسيط</option>
+                  </select>
+                </div>
+                {form.affiliation_type === 'agency' && (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">الوكيل / المكتب الوسيط *</label>
+                  <select
+                    value={form.office_id || "NEW_OFFICE"}
+                    onChange={e => handleSelectOffice(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-xs font-bold text-slate-900"
+                  >
+                    <option value="" disabled>-- اختر المكتب --</option>
+                    {offices.map((o: any) => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                    <option value="NEW_OFFICE" className="font-bold text-primary">+ إضافة مكتب جديد</option>
+                  </select>
+                </div>
+                )}
+              </div>
+
               {/* Dynamic Chart of Accounts sub-account linkage selection */}
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
                 <div className="space-y-1.5">
@@ -551,12 +582,11 @@ export default function TravelCustomersPage() {
                     <span>رابط الحساب بدليل الحسابات (شجرة الحسابات) *</span>
                   </label>
                   <select
-                    required
                     value={form.account_code}
                     onChange={e => setForm(f => ({ ...f, account_code: e.target.value }))}
                     className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-xs font-bold text-slate-900"
                   >
-                    <option value="">-- اختر الحساب الفرعي من دليل الحسابات --</option>
+                    <option value="">✨ إنشاء حساب جديد ومستقل للعميل تلقائياً (تابع للمكتب مباشرة)</option>
                     {subAccounts.map((acc: any) => (
                       <option key={acc.code} value={acc.code}>
                         {acc.code} - {acc.name} ({acc.parent_code === '11200' ? 'ذمم مدينة' : 'ذمم دائنة'})

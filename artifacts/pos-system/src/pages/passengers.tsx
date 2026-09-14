@@ -375,6 +375,22 @@ export default function PassengersPage() {
 
   // Umrah specific list
   const umrahPassengers = useMemo(() => {
+    let list = passengers.filter(p => (p.visa_type || "").includes("عمر") || p.travel_date);
+    if (filterStatus !== "all") {
+      list = list.filter(p => {
+        const remaining = p.remaining_days !== null && p.remaining_days !== undefined ? Number(p.remaining_days) : null;
+        if (remaining === null) return false;
+        if (filterStatus === "urgent") return remaining <= 3 && remaining >= 0;
+        if (filterStatus === "warning") return remaining > 3 && remaining <= 10;
+        if (filterStatus === "overstayed") return remaining < 0;
+        if (filterStatus === "safe") return remaining > 10;
+        return true;
+      });
+    }
+    return list;
+  }, [passengers, filterStatus]);
+  
+  const originalUmrahPassengers = useMemo(() => {
     return passengers.filter(p => (p.visa_type || "").includes("عمر") || p.travel_date);
   }, [passengers]);
 
@@ -678,6 +694,14 @@ export default function PassengersPage() {
   // Launch WhatsApp with pre-filled message directly
   const handleSendWhatsApp = () => {
     if (!whatsappAuthorized) {
+      setWhatsappPermissionModalOpen(true);
+      return;
+    }
+
+    if (whatsappFormat === "pdf") {
+       handleExportToPdf(targetPaxForWhatsApp ? [targetPaxForWhatsApp] : (selectedCustomerId ? filteredPassengers : umrahPassengers));
+       return;
+    }
       setWhatsappPermissionModalOpen(true);
       return;
     }
@@ -1155,6 +1179,8 @@ export default function PassengersPage() {
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 text-xs font-black border-b border-slate-200">
                       <th className="py-3 px-4">اسم المعتمر</th>
+                      <th className="py-3 px-4">الجنسية</th>
+                      <th className="py-3 px-4">رقم الهاتف</th>
                       <th className="py-3 px-4">رقم الجواز</th>
                       <th className="py-3 px-4">النوع</th>
                       <th className="py-3 px-4 text-center">مدة السفر (البرنامج)</th>
@@ -1168,7 +1194,7 @@ export default function PassengersPage() {
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {isLoading ? (
                       <tr>
-                        <td colSpan={9} className="text-center py-8 text-slate-400">جاري تحميل بيانات المعتمرين...</td>
+                        <td colSpan={11} className="text-center py-8 text-slate-400">جاري تحميل بيانات المعتمرين...</td>
                       </tr>
                     ) : umrahPassengers.length === 0 ? (
                       <tr>
@@ -1206,6 +1232,8 @@ export default function PassengersPage() {
                             <td className="py-3 px-4 font-mono font-bold text-slate-700">
                               {p.passport_number || "---"}
                             </td>
+                            <td className="py-3 px-4 text-slate-600">{p.nationality || "يمني"}</td>
+                            <td className="py-3 px-4 font-mono text-slate-600">{p.phone || "---"}</td>
 
                             <td className="py-3 px-4 text-slate-600">
                               <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded text-[11px] font-bold">

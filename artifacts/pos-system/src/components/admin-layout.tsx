@@ -1145,14 +1145,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="pt-2 space-y-3">
-              <button
-                onClick={handleLogout}
-                className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
-              >
-                <LogOut className="w-4 h-4" />
-                تسجيل الدخول بحساب المطور لتحديث الترخيص
-              </button>
-
               <div className="text-xs text-slate-400 font-mono flex items-center justify-center gap-2 pt-1">
                 <span>للدعم الفني وتحديث التراخيص:</span>
                 <a href="tel:777146387" className="text-amber-400 hover:underline font-bold dir-ltr inline-block">777146387</a>
