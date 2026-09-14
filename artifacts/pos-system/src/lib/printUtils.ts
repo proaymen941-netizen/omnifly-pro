@@ -2560,14 +2560,15 @@ export function generateVisitorsStatusReportA4Html(
           <th>اسم المعتمر</th>
           <th>رقم الجواز</th>
           <th>النوع</th>
-          <th>مده<br>السفر(فترة<br>البرنامج)</th>
-          <th>تاريخ<br>الدخول(السفر)</th>
+          <th>مدة السفر<br>(فترة البرنامج)</th>
+          <th>تاريخ الدخول<br>(السفر)</th>
+          <th>الأيام المنقضية<br>داخل مكة</th>
           <th>الأيام المتبقية<br>على الخروج</th>
           <th>تاريخ الخروج<br>المتوقع</th>
         </tr>
       </thead>
       <tbody>
-        ${rowsHtml || `<tr><td colspan="7" style="text-align:center; padding: 20px;">لا يوجد بيانات للعرض</td></tr>`}
+        ${rowsHtml || `<tr><td colspan="8" style="text-align:center; padding: 20px;">لا يوجد بيانات للعرض</td></tr>`}
       </tbody>
     </table>
 
