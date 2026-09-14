@@ -702,9 +702,6 @@ export default function PassengersPage() {
        handleExportToPdf(targetPaxForWhatsApp ? [targetPaxForWhatsApp] : (selectedCustomerId ? filteredPassengers : umrahPassengers));
        return;
     }
-      setWhatsappPermissionModalOpen(true);
-      return;
-    }
 
     let cleanPhone = (whatsAppPhone || "").replace(/\D/g, "");
     if (!cleanPhone) {
