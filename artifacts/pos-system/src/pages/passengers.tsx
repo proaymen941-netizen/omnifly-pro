@@ -1213,7 +1213,7 @@ const statsModalData = useMemo(() => {
                   <tbody className="divide-y divide-slate-100 text-xs">
                     {isLoading ? (
                       <tr>
-                        <td colSpan={11} className="text-center py-8 text-slate-400">جاري تحميل بيانات المعتمرين...</td>
+                        <td colSpan={12} className="text-center py-8 text-slate-400">جاري تحميل بيانات المعتمرين...</td>
                       </tr>
                     ) : umrahPassengers.length === 0 ? (
                       <tr>
@@ -1268,6 +1268,11 @@ const statsModalData = useMemo(() => {
 
                             <td className="py-3 px-4 text-center font-mono text-slate-700 font-semibold">
                               {(p.travel_date || "---").replace(/-/g, "/")}
+                            </td>
+                            <td className="py-3 px-4 text-center font-bold text-blue-900 font-mono">
+                              <span className="bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-1 rounded-md text-xs">
+                                {calcDaysSpent(p.travel_date)} يوم
+                              </span>
                             </td>
 
                             <td className="py-3 px-4 text-center">
@@ -1432,6 +1437,7 @@ const statsModalData = useMemo(() => {
                       <th className="border-[1.5px] border-black py-2.5 px-3 font-bold">الملاحظات</th>
                       <th className="border-[1.5px] border-black py-2.5 px-2 font-bold leading-tight">مده السفر<br/>(فترة البرنامج)</th>
                       <th className="border-[1.5px] border-black py-2.5 px-2 font-bold leading-tight">تاريخ الدخول<br/>(السفر)</th>
+                      <th className="border-[1.5px] border-black py-2.5 px-2 font-bold leading-tight">الأيام المنقضية<br/>داخل مكة</th>
                       <th className="border-[1.5px] border-black py-2.5 px-2 font-bold leading-tight">الأيام المتبقية<br/>على الخروج</th>
                       <th className="border-[1.5px] border-black py-2.5 px-2 font-bold leading-tight">تاريخ الخروج<br/>المتوقع</th>
                     </tr>
@@ -1439,7 +1445,7 @@ const statsModalData = useMemo(() => {
                   <tbody>
                     {(selectedCustomerId ? filteredPassengers : umrahPassengers).length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="border-[1.5px] border-black py-6 text-slate-500">لا يوجد بيانات للعرض</td>
+                        <td colSpan={10} className="border-[1.5px] border-black py-6 text-slate-500">لا يوجد بيانات للعرض</td>
                       </tr>
                     ) : (
                       (selectedCustomerId ? filteredPassengers : umrahPassengers).map((p) => {
@@ -1554,6 +1560,9 @@ const statsModalData = useMemo(() => {
                         </td>
                         <td className="py-3 px-4 font-mono text-slate-600 text-center">
                           {p.travel_date ? p.travel_date.replace(/-/g, "/") : "---"}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-blue-900 text-center font-mono">
+                          {calcDaysSpent(p.travel_date)} يوم
                         </td>
                         <td className="py-3 px-4 font-mono text-slate-600" dir="ltr">{p.phone || "---"}</td>
                         <td className="py-3 px-4 text-slate-700 font-semibold">{p.customer_name || "---"}</td>

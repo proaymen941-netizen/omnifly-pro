@@ -2404,6 +2404,7 @@ export function generateVisitorsStatusReportA4Html(
     const pEntryDate = (p.travel_date || p.entry_date || "").replace(/-/g, "/");
     const pRemaining = p.remaining_days !== null && p.remaining_days !== undefined ? p.remaining_days : "---";
     const pExitDate = (p.expected_exit_date || "").replace(/-/g, "/");
+    const pDaysSpent = p.travel_date ? Math.max(0, Math.floor((new Date().getTime() - new Date(p.travel_date).getTime()) / (1000 * 60 * 60 * 24))) : 0;
 
     const remainingNum = Number(pRemaining);
     const isDanger = !isNaN(remainingNum) && remainingNum <= 3;
@@ -2416,6 +2417,7 @@ export function generateVisitorsStatusReportA4Html(
         <td class="col-center">${pType}</td>
         <td class="col-center font-mono font-bold">${pDuration}</td>
         <td class="col-center font-mono">${pEntryDate || "---"}</td>
+        <td class="col-center font-mono font-bold text-blue-800">${pDaysSpent} يوم</td>
         <td class="col-center font-mono font-bold ${isDanger ? 'text-danger' : isWarning ? 'text-warning' : ''}">${pRemaining}</td>
         <td class="col-center font-mono">${pExitDate || "---"}</td>
       </tr>
