@@ -90,22 +90,6 @@ export default function PassengersPage() {
   const [reportDate, setReportDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [statsModalType, setStatsModalType] = useState<"totalUmrah" | "urgent" | "warning" | "totalPassengers" | null>(null);
   
-  const statsModalData = useMemo(() => {
-    switch(statsModalType) {
-      case "totalUmrah": return umrahPassengers;
-      case "urgent": return umrahPassengers.filter(p => {
-        const rem = p.remaining_days !== null && p.remaining_days !== undefined ? Number(p.remaining_days) : null;
-        return rem !== null && rem <= 3 && rem >= 0;
-      });
-      case "warning": return umrahPassengers.filter(p => {
-        const rem = p.remaining_days !== null && p.remaining_days !== undefined ? Number(p.remaining_days) : null;
-        return rem !== null && rem > 3 && rem <= 10;
-      });
-      case "totalPassengers": return passengers;
-      default: return [];
-    }
-  }, [statsModalType, umrahPassengers, passengers]);
-
   // Modals state
   const [modalOpen, setModalOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -414,6 +398,22 @@ export default function PassengersPage() {
   }, [passengers]);
 
   // Statistics for top cards
+const statsModalData = useMemo(() => {
+    switch(statsModalType) {
+      case "totalUmrah": return umrahPassengers;
+      case "urgent": return umrahPassengers.filter(p => {
+        const rem = p.remaining_days !== null && p.remaining_days !== undefined ? Number(p.remaining_days) : null;
+        return rem !== null && rem <= 3 && rem >= 0;
+      });
+      case "warning": return umrahPassengers.filter(p => {
+        const rem = p.remaining_days !== null && p.remaining_days !== undefined ? Number(p.remaining_days) : null;
+        return rem !== null && rem > 3 && rem <= 10;
+      });
+      case "totalPassengers": return passengers;
+      default: return [];
+    }
+  }, [statsModalType, umrahPassengers, passengers]);
+
   const stats = useMemo(() => {
     const totalUmrah = umrahPassengers.length;
     const inMakkah = umrahPassengers.filter(p => p.travel_status === "داخل مكة" || !p.travel_status).length;
