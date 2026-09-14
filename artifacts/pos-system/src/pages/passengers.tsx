@@ -83,6 +83,7 @@ export default function PassengersPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<"umrah_monitor" | "all_passengers" | "visitors_report">("umrah_monitor");
   const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState<"all" | "urgent" | "warning" | "overstayed" | "safe">("all");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [visaFilter, setVisaFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
