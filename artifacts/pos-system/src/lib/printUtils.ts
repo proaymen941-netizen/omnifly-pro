@@ -1,3 +1,6 @@
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
+
 export function printGenericDocument(title: string, data: any, settings: any) {
   const s = settings || {};
   const accentColor = s.accentColor || "#1e293b";
@@ -254,6 +257,140 @@ function fallbackIframePrint(html: string) {
     }, 450);
   }
 }
+
+/**
+ * Save Document as PDF File directly (Desktop File System & Web Browser fallback)
+ * Allows choosing path and file name or automatic name without triggering print dialog!
+ */
+export async function saveA4PdfToFile(
+  htmlContent: string,
+  title: string = "مستند_PDF",
+  defaultFileName?: string,
+  options?: { landscape?: boolean; pageSize?: string }
+): Promise<{ success: boolean; canceled?: boolean; filePath?: string; fileName?: string; error?: string }> {
+  const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_").trim();
+  const baseName = (defaultFileName || cleanTitle || "مستند").replace(/\.pdf$/i, "");
+  const fileName = `${baseName}.pdf`;
+
+  const fullHtml = htmlContent.includes("<!DOCTYPE html>") ? htmlContent : `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>${cleanTitle}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap');
+    @page {
+      size: ${options?.pageSize || 'A4'} ${options?.landscape ? 'landscape' : 'portrait'};
+      margin: 10mm;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Tajawal', 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+      color: #0f172a;
+      background: #ffffff !important;
+      margin: 0;
+      padding: 10px;
+      font-size: 10pt;
+      line-height: 1.4;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    .no-print { display: none !important; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+    th, td { border: 1px solid #94a3b8 !important; padding: 6px 8px !important; text-align: right !important; }
+    th { background-color: #f1f5f9 !important; font-weight: bold !important; color: #0f172a !important; }
+    @media print {
+      body { padding: 0 !important; background: #fff !important; }
+    }
+  </style>
+</head>
+<body>
+  ${htmlContent}
+</body>
+</html>`;
+
+  // 1. Electron Desktop Environment: Native File Save Dialog & High-Res PDF Rendering directly to disk
+  if (typeof window !== "undefined" && (window as any).electronAPI?.savePdf) {
+    try {
+      const result = await (window as any).electronAPI.savePdf({
+        html: fullHtml,
+        title: cleanTitle,
+        defaultFileName: fileName,
+        pageSize: options?.pageSize || "A4",
+        landscape: options?.landscape || false
+      });
+      return result;
+    } catch (err: any) {
+      console.error("Electron savePdf failed:", err);
+      // fallback to client-side PDF creation
+    }
+  }
+
+  // 2. Web Browser: High-Resolution Client-side PDF Generation via html2canvas & jsPDF
+  try {
+    const container = document.createElement("div");
+    container.style.position = "fixed";
+    container.style.left = "-9999px";
+    container.style.top = "0";
+    container.style.width = options?.landscape ? "1122px" : "794px";
+    container.style.background = "#ffffff";
+    container.style.color = "#0f172a";
+    container.style.padding = "20px";
+    container.style.zIndex = "-99999";
+    container.dir = "rtl";
+    container.innerHTML = fullHtml;
+
+    container.querySelectorAll("script, .no-print").forEach(el => el.remove());
+    document.body.appendChild(container);
+
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: "#ffffff"
+    });
+    document.body.removeChild(container);
+
+    const orientation = options?.landscape ? "landscape" : "portrait";
+    const pdf = new jsPDF({
+      orientation,
+      unit: "mm",
+      format: (options?.pageSize?.toLowerCase() as any) || "a4"
+    });
+
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pdfWidth;
+    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
+    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+    let heightLeft = imgHeight;
+    let position = 0;
+
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+    heightLeft -= pdfHeight;
+
+    while (heightLeft > 0) {
+      position -= pdfHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight;
+    }
+
+    pdf.save(fileName);
+
+    return {
+      success: true,
+      fileName: fileName,
+      filePath: "مجلد التنزيلات (Downloads)"
+    };
+  } catch (err: any) {
+    console.error("Client-side PDF save error:", err);
+    return { success: false, error: err.message || "تعذر حفظ وتصدير ملف الـ PDF" };
+  }
+}
+
+export const saveA4HtmlAsPdf = saveA4PdfToFile;
 
 export function generateStatementA4Html(params: {
   partyType: "employee" | "customer" | "supplier" | "account" | "user" | string;

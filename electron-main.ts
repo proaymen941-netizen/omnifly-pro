@@ -1,5 +1,6 @@
-import { app as electronApp, BrowserWindow, ipcMain } from "electron";
+import { app as electronApp, BrowserWindow, ipcMain, dialog, shell } from "electron";
 import path from "node:path";
+import fs from "node:fs";
 import expressApp from "./artifacts/api-server/src/app";
 
 // Handle print-silent IPC invocation
@@ -20,6 +21,136 @@ ipcMain.handle("print-silent", async (event, printerName: string) => {
       }
     );
   });
+});
+
+ipcMain.handle("save-pdf", async (event, { html, title, defaultFileName, pageSize = "A4", landscape = false }) => {
+  try {
+    const parentWin = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    const cleanDefaultName = (defaultFileName || title || "OmniFly_Document")
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .replace(/\s+/g, "_") + ".pdf";
+
+    const defaultDir = electronApp.getPath("documents") || electronApp.getPath("downloads");
+    const { canceled, filePath } = await dialog.showSaveDialog(parentWin || undefined as any, {
+      title: "حفظ مستند PDF - تحديد مسار واسم الملف",
+      defaultPath: path.join(defaultDir, cleanDefaultName),
+      filters: [
+        { name: "ملفات PDF (*.pdf)", extensions: ["pdf"] },
+        { name: "جميع الملفات (*.*)", extensions: ["*"] }
+      ],
+      properties: ["showOverwriteConfirmation", "createDirectory"]
+    });
+
+    if (canceled || !filePath) {
+      return { canceled: true };
+    }
+
+    const targetFilePath = filePath.toLowerCase().endsWith(".pdf") ? filePath : `${filePath}.pdf`;
+
+    const printWin = new BrowserWindow({
+      show: false,
+      width: 1200,
+      height: 900,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
+      }
+    });
+
+    const fullHtml = html.includes("<!DOCTYPE html>") ? html : `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>${title || "مستند PDF"}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap');
+    @page {
+      size: ${pageSize} ${landscape ? "landscape" : "portrait"};
+      margin: 10mm;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Tajawal', 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+      color: #0f172a;
+      background: #ffffff !important;
+      margin: 0;
+      padding: 10px;
+      font-size: 10pt;
+      line-height: 1.4;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    .no-print { display: none !important; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+    th, td { border: 1px solid #94a3b8 !important; padding: 6px 8px !important; text-align: right !important; }
+    th { background-color: #f1f5f9 !important; font-weight: bold !important; color: #0f172a !important; }
+  </style>
+</head>
+<body>
+  ${html}
+</body>
+</html>`;
+
+    await printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`);
+    await new Promise(r => setTimeout(r, 450));
+
+    const pdfData = await printWin.webContents.printToPDF({
+      pageSize: pageSize,
+      landscape: landscape,
+      printBackground: true,
+      margins: {
+        top: 0.4,
+        bottom: 0.4,
+        left: 0.4,
+        right: 0.4
+      }
+    });
+
+    fs.writeFileSync(targetFilePath, pdfData);
+    printWin.close();
+
+    return {
+      success: true,
+      filePath: targetFilePath,
+      fileName: path.basename(targetFilePath)
+    };
+  } catch (err: any) {
+    console.error("save-pdf error in main process:", err);
+    return {
+      success: false,
+      error: err.message || "فشل حفظ ملف الـ PDF"
+    };
+  }
+});
+
+ipcMain.handle("open-path", async (event, targetPath: string) => {
+  if (!targetPath) return { success: false, error: "المسار غير محدد" };
+  try {
+    const res = await shell.openPath(targetPath);
+    return { success: !res, error: res };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("show-item-in-folder", async (event, targetPath: string) => {
+  if (!targetPath) return { success: false };
+  try {
+    shell.showItemInFolder(targetPath);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("open-external", async (event, url: string) => {
+  if (!url) return { success: false };
+  try {
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
 });
 
 // In production, set the environment variables before initializing the database

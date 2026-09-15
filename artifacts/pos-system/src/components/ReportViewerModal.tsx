@@ -1,8 +1,9 @@
 import React, { useRef, useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Printer, X, FileDown, ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2 } from "lucide-react";
-import { printA4Html } from "@/lib/printUtils";
+import { Printer, X, FileDown, ZoomIn, ZoomOut, RotateCcw, Maximize2, Minimize2, Check, CheckCircle2 } from "lucide-react";
+import { printA4Html, saveA4PdfToFile } from "@/lib/printUtils";
+import { useToast } from "@/hooks/use-toast";
 
 export function ReportViewerModal({ 
   isOpen, 
@@ -15,9 +16,11 @@ export function ReportViewerModal({
   htmlContent: string; 
   title?: string;
 }) {
+  const { toast } = useToast();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [zoom, setZoom] = useState<number>(100);
   const [isFullScreen, setIsFullScreen] = useState<boolean>(true);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
 
   // Inject styles into the iframe to match printUtils and ensure high-fidelity rendering
   const fullHtml = htmlContent.includes("<!DOCTYPE html>") ? htmlContent : `<!DOCTYPE html>
@@ -49,9 +52,36 @@ export function ReportViewerModal({
     printA4Html(htmlContent, title);
   };
 
-  const handleExportPdf = () => {
-    const pdfTitle = title.endsWith(".pdf") ? title : `${title}_PDF`;
-    printA4Html(htmlContent, pdfTitle);
+  const handleExportPdf = async () => {
+    const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_").trim();
+    setIsSaving(true);
+    try {
+      const res = await saveA4PdfToFile(htmlContent, cleanTitle, cleanTitle);
+      if (res.canceled) {
+        setIsSaving(false);
+        return;
+      }
+      if (res.success) {
+        toast({
+          title: "تم حفظ ملف الـ PDF بنجاح",
+          description: res.filePath ? `المسار: ${res.filePath}` : "تم تحميل المستند بنجاح"
+        });
+      } else if (res.error) {
+        toast({
+          title: "فشل حفظ الملف",
+          description: res.error,
+          variant: "destructive"
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: "خطأ غير متوقع",
+        description: err.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (

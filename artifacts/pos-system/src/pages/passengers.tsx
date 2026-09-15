@@ -17,7 +17,8 @@ import {
   generateVisitorsStatusReportA4Html, 
   generatePassengersDirectoryA4Html, 
   generateSinglePassengerCardA4Html, 
-  printA4Html 
+  printA4Html,
+  saveA4PdfToFile
 } from "@/lib/printUtils";
 import { ReportViewerModal } from "@/components/ReportViewerModal";
 import { useToast } from "@/hooks/use-toast";
@@ -101,6 +102,13 @@ export default function PassengersPage() {
   const [reportViewerOpen, setReportViewerOpen] = useState(false);
   const [reportViewerHtml, setReportViewerHtml] = useState("");
   const [reportViewerTitle, setReportViewerTitle] = useState("استعراض التقرير");
+
+  // Saved File Notification & Actions Toast/Modal
+  const [savedFileToast, setSavedFileToast] = useState<{
+    open: boolean;
+    filePath?: string;
+    fileName?: string;
+  } | null>(null);
 
   // Full screen preview controls
   const [previewZoom, setPreviewZoom] = useState<number>(100);
@@ -449,8 +457,8 @@ const statsModalData = useMemo(() => {
     printA4Html(html);
   };
 
-  // Export / Save Visitors Status Report as PDF (.pdf via system print/save)
-  const handleExportToPdf = (targetList?: any[], custName?: string) => {
+  // Export / Save Visitors Status Report as PDF directly to file
+  const handleExportToPdf = async (targetList?: any[], custName?: string) => {
     const listToPrint = targetList || (selectedCustomerId ? filteredPassengers : umrahPassengers);
     const docTitle = `تقرير_حالة_الزائرين_${(custName || currentCustomerName).replace(/\s+/g, "_")}_${reportDate}`;
     const html = generateVisitorsStatusReportA4Html(listToPrint, {
@@ -458,11 +466,38 @@ const statsModalData = useMemo(() => {
       reportDate: reportDate.replace(/-/g, "/"),
       companyName: "نظام إدارة المسافرين وتأشيرات العمرة"
     });
-    printA4Html(html, docTitle);
+    
+    try {
+      const res = await saveA4PdfToFile(html, docTitle, docTitle);
+      if (res.canceled) return;
+      if (res.success) {
+        setSavedFileToast({
+          open: true,
+          filePath: res.filePath,
+          fileName: res.fileName || `${docTitle}.pdf`
+        });
+        toast({
+          title: "تم حفظ ملف PDF بنجاح",
+          description: res.filePath ? `تم الحفظ في: ${res.filePath}` : "تم حفظ وتنزيل الملف بنجاح"
+        });
+      } else if (res.error) {
+        toast({
+          title: "فشل حفظ الملف",
+          description: res.error,
+          variant: "destructive"
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: "خطأ في التصدير",
+        description: e.message,
+        variant: "destructive"
+      });
+    }
   };
 
-  // Export Passengers & Passports Directory as PDF
-  const handleExportPassengersDirectoryToPdf = (targetList?: any[], custName?: string) => {
+  // Export Passengers & Passports Directory as PDF directly to file
+  const handleExportPassengersDirectoryToPdf = async (targetList?: any[], custName?: string) => {
     const listToPrint = targetList || (selectedCustomerId ? filteredPassengers : passengers);
     const docTitle = `سجل_بيانات_المسافرين_والجوازات_${(custName || currentCustomerName).replace(/\s+/g, "_")}_${reportDate}`;
     const html = generatePassengersDirectoryA4Html(listToPrint, {
@@ -470,17 +505,71 @@ const statsModalData = useMemo(() => {
       reportDate: reportDate.replace(/-/g, "/"),
       companyName: "OmniFly Pro — إدارة المسافرين والجوازات والرحلات"
     });
-    printA4Html(html, docTitle);
+    
+    try {
+      const res = await saveA4PdfToFile(html, docTitle, docTitle);
+      if (res.canceled) return;
+      if (res.success) {
+        setSavedFileToast({
+          open: true,
+          filePath: res.filePath,
+          fileName: res.fileName || `${docTitle}.pdf`
+        });
+        toast({
+          title: "تم حفظ ملف PDF بنجاح",
+          description: res.filePath ? `تم الحفظ في: ${res.filePath}` : "تم حفظ وتنزيل الملف بنجاح"
+        });
+      } else if (res.error) {
+        toast({
+          title: "فشل حفظ الملف",
+          description: res.error,
+          variant: "destructive"
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: "خطأ في التصدير",
+        description: e.message,
+        variant: "destructive"
+      });
+    }
   };
 
-  // Export Single Passenger & Passport Card as PDF
-  const handleExportSinglePassengerToPdf = (pax: any) => {
+  // Export Single Passenger & Passport Card as PDF directly to file
+  const handleExportSinglePassengerToPdf = async (pax: any) => {
     const paxName = pax.name_ar || pax.name_en || pax.passport_number || "مسافر";
     const docTitle = `بطاقة_مسافر_وجواز_${paxName.replace(/\s+/g, "_")}`;
     const html = generateSinglePassengerCardA4Html(pax, {
       companyName: "OmniFly Pro — إدارة المسافرين والجوازات والرحلات"
     });
-    printA4Html(html, docTitle);
+    
+    try {
+      const res = await saveA4PdfToFile(html, docTitle, docTitle);
+      if (res.canceled) return;
+      if (res.success) {
+        setSavedFileToast({
+          open: true,
+          filePath: res.filePath,
+          fileName: res.fileName || `${docTitle}.pdf`
+        });
+        toast({
+          title: "تم حفظ ملف PDF بنجاح",
+          description: res.filePath ? `تم الحفظ في: ${res.filePath}` : "تم حفظ وتنزيل الملف بنجاح"
+        });
+      } else if (res.error) {
+        toast({
+          title: "فشل حفظ الملف",
+          description: res.error,
+          variant: "destructive"
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: "خطأ في التصدير",
+        description: e.message,
+        variant: "destructive"
+      });
+    }
   };
 
   // Open Full-Screen Preview Modal (No printing errors, includes zoom and PDF export)
@@ -662,11 +751,27 @@ const statsModalData = useMemo(() => {
   // Open WhatsApp Dialog for client report or individual pilgrim
   const handleOpenWhatsAppDialog = (pax?: any) => {
     const listToSend = pax ? [pax] : (selectedCustomerId ? filteredPassengers : umrahPassengers);
-    const cust = selectedCustomerObj || customers.find(c => c.name.includes("محمد"));
-    const phone = pax?.phone || cust?.phone || "966500000000";
+    
+    // 1. Automatic Customer / Passenger Phone Number Extraction with comprehensive fallbacks
+    let phone = "";
+    if (pax) {
+      phone = pax.phone || pax.mobile || pax.contact_phone || pax.customer_phone || "";
+      if (!phone && (pax.customer_id || pax.customer_name)) {
+        const matchedCust = customers.find((c: any) => 
+          (pax.customer_id && String(c.id) === String(pax.customer_id)) || 
+          (pax.customer_name && c.name && c.name.trim() === pax.customer_name.trim())
+        );
+        if (matchedCust) {
+          phone = matchedCust.phone || matchedCust.mobile || "";
+        }
+      }
+    } else {
+      const cust = selectedCustomerObj || customers.find((c: any) => String(c.id) === String(selectedCustomerId));
+      phone = cust?.phone || cust?.mobile || (filteredPassengers.length > 0 ? filteredPassengers[0].phone : "") || "";
+    }
 
     setTargetPaxForWhatsApp(pax || null);
-    setWhatsAppPhone(phone);
+    setWhatsAppPhone(phone || "");
 
     let message = "";
     const agencySig = `\n━━━━━━━━━━━━━━━━━━━━\n🕋 *رقم الوكالة / المكتب المرسل:* ${agencyWhatsAppSender}\n*OmniFly Pro - نظام الرقابة والمتابعة*`;
@@ -710,17 +815,16 @@ const statsModalData = useMemo(() => {
     setWhatsAppModalOpen(true);
   };
 
-  // Launch WhatsApp with pre-filled message directly
-  const handleSendWhatsApp = () => {
+  // Launch WhatsApp with pre-filled message directly or activate Windows desktop app
+  const handleSendWhatsApp = async () => {
     if (!whatsappAuthorized) {
       setWhatsappPermissionModalOpen(true);
       return;
     }
 
     if (whatsappFormat === "pdf") {
-       alert("سيتم توليد تقرير PDF. يرجى حفظه أو مشاركته يدوياً كملف مرفق عبر تطبيق واتساب.");
-       handleExportToPdf(targetPaxForWhatsApp ? [targetPaxForWhatsApp] : (selectedCustomerId ? filteredPassengers : umrahPassengers));
-       return;
+       alert("سيتم توليد وحفظ تقرير PDF لاختيار مسار حفظه وإرفاقه بالرسالة.");
+       await handleExportToPdf(targetPaxForWhatsApp ? [targetPaxForWhatsApp] : (selectedCustomerId ? filteredPassengers : umrahPassengers));
     }
 
     let cleanPhone = (whatsAppPhone || "").replace(/\D/g, "");
@@ -736,12 +840,37 @@ const statsModalData = useMemo(() => {
     }
 
     const encodedMsg = encodeURIComponent(whatsAppCustomText);
-    const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedMsg}`;
-    window.open(url, "_blank");
+    const whatsappAppUri = `whatsapp://send?phone=${cleanPhone}&text=${encodedMsg}`;
+    const whatsappWebUri = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedMsg}`;
+
+    // 1. Electron Desktop Environment: Activate installed Windows WhatsApp Application directly
+    if (typeof window !== "undefined" && (window as any).electronAPI?.openExternal) {
+      try {
+        await (window as any).electronAPI.openExternal(whatsappAppUri);
+      } catch (e) {
+        await (window as any).electronAPI.openExternal(whatsappWebUri);
+      }
+    } else {
+      // 2. Web Browser: Launch Protocol & Web WhatsApp
+      try {
+        const link = document.createElement("a");
+        link.href = whatsappAppUri;
+        link.target = "_blank";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => {
+          window.open(whatsappWebUri, "_blank");
+        }, 500);
+      } catch (e) {
+        window.open(whatsappWebUri, "_blank");
+      }
+    }
+
     setWhatsAppModalOpen(false);
   };
 
-  // Automated batch sending with anti-ban delay precautions and robust error handling
+  // Automated batch sending with rate limiting and Windows/Electron background integration
   const handleAutoSendBatchWhatsApp = async () => {
     if (!whatsappAuthorized) {
       setWhatsappPermissionModalOpen(true);
@@ -776,7 +905,7 @@ const statsModalData = useMemo(() => {
     setWhatsappBatchProgress({ 
       current: 0, 
       total: baseList.length, 
-      status: "بدء حفظ الإعدادات وتنفيذ الأتمتة التلقائية...",
+      status: "بدء حفظ الإعدادات وتنفيذ الأتمتة التلقائية في الخلفية...",
       successCount: 0,
       failCount: 0
     });
@@ -829,10 +958,18 @@ const statsModalData = useMemo(() => {
               `📞 الوكالة: ${agencyWhatsAppSender}`;
       }
 
-      const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`;
+      const encodedMsg = encodeURIComponent(msg);
+      const whatsappAppUri = `whatsapp://send?phone=${cleanPhone}&text=${encodedMsg}`;
+      const whatsappWebUri = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedMsg}`;
 
       try {
-        window.open(url, "_blank");
+        if (typeof window !== "undefined" && (window as any).electronAPI?.openExternal) {
+          await (window as any).electronAPI.openExternal(whatsappAppUri).catch(async () => {
+            await (window as any).electronAPI.openExternal(whatsappWebUri);
+          });
+        } else {
+          window.open(whatsappWebUri, "_blank");
+        }
         successCount++;
       } catch (e) {
         failCount++;
@@ -843,7 +980,7 @@ const statsModalData = useMemo(() => {
         total: baseList.length,
         successCount,
         failCount,
-        status: `تم تجهيز وإرسال تنبيه (${i + 1}/${baseList.length}) للمعتمر: ${p.name_ar || p.name_en}`
+        status: `تم معالجة وإرسال تنبيه (${i + 1}/${baseList.length}) للمعتمر: ${p.name_ar || p.name_en}`
       });
 
       // Anti-ban safe delay between dispatches
@@ -2492,6 +2629,76 @@ const statsModalData = useMemo(() => {
           htmlContent={reportViewerHtml}
           title={reportViewerTitle}
         />
+
+        {/* PDF SAVED CONFIRMATION & FILE ACTIONS MODAL */}
+        <Dialog open={!!savedFileToast?.open} onOpenChange={(open) => !open && setSavedFileToast(null)}>
+          <DialogContent className="max-w-md" dir="rtl">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-black text-slate-900 flex items-center gap-2">
+                <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                تم حفظ مستند الـ PDF بنجاح
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                تم تصدير وحفظ الملف بالكامل في جهازك بدون أي أخطاء وبدون طباعة ورقية
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-2 text-xs text-slate-700">
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5">
+                <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-rose-600" />
+                  اسم الملف:
+                </div>
+                <div className="font-mono text-[11px] text-slate-700 bg-white p-2 rounded border break-all">
+                  {savedFileToast?.fileName || "مستند.pdf"}
+                </div>
+
+                {savedFileToast?.filePath && (
+                  <>
+                    <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5 mt-2">
+                      <Globe className="w-4 h-4 text-blue-600" />
+                      مسار وموقع الحفظ في جهازك:
+                    </div>
+                    <div className="font-mono text-[11px] text-slate-600 bg-white p-2 rounded border break-all">
+                      {savedFileToast?.filePath}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 border-t pt-3 flex-row-reverse sm:flex-row-reverse">
+              <Button variant="outline" onClick={() => setSavedFileToast(null)}>
+                إغلاق
+              </Button>
+
+              {savedFileToast?.filePath && typeof window !== "undefined" && (window as any).electronAPI?.showItemInFolder && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    (window as any).electronAPI.showItemInFolder(savedFileToast.filePath);
+                  }}
+                  className="gap-1.5 font-bold text-xs"
+                >
+                  <ExternalLink className="w-4 h-4 text-slate-600" />
+                  عرض في المجلد
+                </Button>
+              )}
+
+              {savedFileToast?.filePath && typeof window !== "undefined" && (window as any).electronAPI?.openPath && (
+                <Button
+                  onClick={() => {
+                    (window as any).electronAPI.openPath(savedFileToast.filePath);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1.5 text-xs"
+                >
+                  <Eye className="w-4 h-4" />
+                  فتح ملف الـ PDF
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );
