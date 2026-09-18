@@ -199,15 +199,26 @@ export function validateAndFormatPhone(
   isValid: boolean;
   cleanPhone: string;
   formatted: string;
+  extractedName?: string;
   reason?: string;
 } {
   if (!rawPhone || !String(rawPhone).trim()) {
-    return { isValid: false, cleanPhone: "", formatted: "", reason: "رقم الهاتف فارغ ولم يتم تسجيله في بيانات المسافر" };
+    return { isValid: false, cleanPhone: "", formatted: "", reason: "رقم الهاتف فارغ ولم يتم تسجيله في بيانات المسافر أو الكفيل" };
   }
 
-  let digits = String(rawPhone).replace(/\D/g, "").trim();
+  const rawStr = String(rawPhone).trim();
 
-  // Strip international prefixes (00 or +)
+  // Extract possible name part if mixed (e.g. "أحمد سالم 0551234567" or "الكفيل: 771234567")
+  let extractedName = "";
+  const nameMatch = rawStr.match(/([^\d+()\-/\\]{2,})/);
+  if (nameMatch && nameMatch[1].trim().length > 1) {
+    extractedName = nameMatch[1].trim().replace(/[:\-_]/g, "");
+  }
+
+  // 1. Extract purely the digits from the input
+  let digits = rawStr.replace(/\D/g, "").trim();
+
+  // Strip international prefix indicators (00)
   if (digits.startsWith("00")) {
     digits = digits.slice(2);
   }
@@ -217,30 +228,55 @@ export function validateAndFormatPhone(
       isValid: false,
       cleanPhone: digits,
       formatted: "",
-      reason: "رقم الهاتف غير مكتمل أو أقل من 7 خانات",
+      extractedName,
+      reason: "رقم الهاتف غير مكتمل أو أقل من 7 خانات رقمية",
     };
   }
 
-  // Handle local prefixes with smart country code auto-detection
+  // 2. Smart Multi-Country Detection and Normalization:
+  // Saudi Arabia: 05xxxxxxxx (10 digits) -> 9665xxxxxxxx, or 5xxxxxxxx (9 digits) -> 9665xxxxxxxx
   if (digits.startsWith("05") && digits.length === 10) {
-    // Saudi Arabia (05xxxxxxxx -> 9665xxxxxxxx)
     digits = "966" + digits.slice(1);
   } else if (digits.startsWith("5") && digits.length === 9) {
-    // Saudi Arabia (5xxxxxxxx -> 9665xxxxxxxx)
     digits = "966" + digits;
-  } else if (digits.startsWith("07") && digits.length === 10) {
-    // Yemen (07xxxxxxxx -> 9677xxxxxxxx)
+  }
+  // Yemen: 07xxxxxxxx (10 digits) -> 9677xxxxxxxx, or 7xxxxxxxx (9 digits - 70, 71, 73, 77, 78) -> 9677xxxxxxxx
+  else if (digits.startsWith("07") && digits.length === 10) {
     digits = "967" + digits.slice(1);
-  } else if (digits.startsWith("7") && digits.length === 9) {
-    // Yemen mobile (7xxxxxxxx -> 9677xxxxxxxx)
+  } else if ((digits.startsWith("70") || digits.startsWith("71") || digits.startsWith("73") || digits.startsWith("77") || digits.startsWith("78")) && digits.length === 9) {
     digits = "967" + digits;
-  } else if (digits.startsWith("01") && digits.length === 11) {
-    // Egypt mobile (01xxxxxxxxx -> 201xxxxxxxxx)
+  }
+  // Egypt: 01xxxxxxxxx (11 digits) -> 201xxxxxxxxx, or 1xxxxxxxxx (10 digits - 10, 11, 12, 15) -> 201xxxxxxxxx
+  else if (digits.startsWith("01") && digits.length === 11) {
     digits = "20" + digits.slice(1);
-  } else if (digits.startsWith("0") && digits.length >= 8 && digits.length <= 11) {
-    // General local number with leading zero -> strip 0 and prepend default country code
+  } else if ((digits.startsWith("10") || digits.startsWith("11") || digits.startsWith("12") || digits.startsWith("15")) && digits.length === 10) {
+    digits = "20" + digits;
+  }
+  // UAE: 05xxxxxxxx (10 digits) -> 9715xxxxxxxx, or 5xxxxxxxx (9 digits - 50, 52, 54, 55, 56, 58) when default is 971
+  else if (digits.startsWith("971") && digits.length >= 11) {
+    // already formatted
+  }
+  // Jordan: 07xxxxxxxx (10 digits) -> 9627xxxxxxxx
+  else if (digits.startsWith("07") && digits.length === 10 && defaultCountryCode === "962") {
+    digits = "962" + digits.slice(1);
+  }
+  // Iraq: 07xxxxxxxxx (11 digits) -> 9647xxxxxxxxx
+  else if (digits.startsWith("07") && digits.length === 11) {
+    digits = "964" + digits.slice(1);
+  }
+  // Sudan: 09xxxxxxx or 01xxxxxxx (10 digits) -> 249 + 9 digits
+  else if ((digits.startsWith("09") || digits.startsWith("01")) && digits.length === 10 && defaultCountryCode === "249") {
+    digits = "249" + digits.slice(1);
+  }
+  // General local number with leading zero -> strip 0 and prepend default country code
+  else if (digits.startsWith("0") && digits.length >= 8 && digits.length <= 11) {
     const cleanDefault = defaultCountryCode.replace(/\D/g, "") || "966";
     digits = cleanDefault + digits.slice(1);
+  }
+  // If digits has 8 or 9 digits and does not start with a country code, prepend default country code
+  else if (digits.length >= 8 && digits.length <= 9 && !digits.startsWith("966") && !digits.startsWith("967") && !digits.startsWith("20") && !digits.startsWith("971")) {
+    const cleanDefault = defaultCountryCode.replace(/\D/g, "") || "966";
+    digits = cleanDefault + digits;
   }
 
   if (digits.length < 8 || digits.length > 15) {
@@ -248,11 +284,12 @@ export function validateAndFormatPhone(
       isValid: false,
       cleanPhone: digits,
       formatted: "",
+      extractedName,
       reason: `طول الرقم (${digits.length} خانة) غير متطابق مع المعايير الدولية (8-15 خانة)`,
     };
   }
 
-  return { isValid: true, cleanPhone: digits, formatted: `+${digits}` };
+  return { isValid: true, cleanPhone: digits, formatted: `+${digits}`, extractedName };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1291,53 +1328,45 @@ router.post("/travel/whatsapp/batch-process", async (req: Request, res: Response
 
     // Process each passenger
     for (const p of passengers) {
-      const rawPhone = p.phone || p.mobile || p.customer_phone || "";
-      const phoneCheck = validateAndFormatPhone(rawPhone, config.agency_sender || "966");
-
-      if (!phoneCheck.isValid) {
-        skippedCount++;
-        skippedDetails.push({
-          id: p.id,
-          name: p.name_ar || p.name_en || "مسافر",
-          phone: rawPhone || "فارغ",
-          reason: phoneCheck.reason || "رقم هاتف غير صحيح أو غير مسجل في النظام",
-        });
-
-        try {
-          db.prepare(`
-            INSERT INTO travel_notification_logs (
-              channel, recipient_phone, recipient_name, template_code, message_body,
-              entity_type, entity_id, status, error_message, sent_by, content_type, skipped_reason
-            ) VALUES (
-              'whatsapp', ?, ?, 'PASSENGER_CARD', 'تم التخطي تلقائياً لعدم صحة رقم الهاتف',
-              'passenger', ?, 'skipped', ?, 'الأتمتة التلقائية', ?, ?
-            )
-          `).run(
-            rawPhone || "غير مسجل",
-            p.name_ar || p.name_en || "مسافر",
-            p.id,
-            phoneCheck.reason || "رقم غير صالح",
-            config.content_type || "text_and_pdf",
-            phoneCheck.reason || "رقم غير صالح"
-          );
-        } catch (e) {}
-        continue;
-      }
-
-      // Generate PDF if needed
-      let docUrl = "";
-      let fileName = "";
-      if (config.content_type === "pdf" || config.content_type === "text_and_pdf") {
-        try {
-          const savedDoc = await generateAndSavePassengerDoc(p, host);
-          docUrl = savedDoc.fileUrl;
-          fileName = savedDoc.fileName;
-        } catch (err: any) {
-          logger.warn({ err }, "Could not generate passenger PDF document in batch");
-        }
-      }
-
       if (isScheduled) {
+        let rawPhone = p.phone || p.mobile || p.customer_phone || "";
+        if (!rawPhone && p.customer_id) {
+          try {
+            const cust = db.prepare("SELECT phone, mobile FROM customers WHERE id = ?").get(p.customer_id) as any;
+            if (cust) rawPhone = cust.phone || cust.mobile || "";
+          } catch (e) {}
+        }
+        if (!rawPhone && p.customer_name) {
+          try {
+            const cust = db.prepare("SELECT phone, mobile FROM customers WHERE name LIKE ? OR name_ar LIKE ? LIMIT 1").get(`%${p.customer_name}%`, `%${p.customer_name}%`) as any;
+            if (cust) rawPhone = cust.phone || cust.mobile || "";
+          } catch (e) {}
+        }
+
+        const phoneCheck = validateAndFormatPhone(rawPhone, config.agency_sender || "966");
+
+        if (!phoneCheck.isValid) {
+          skippedCount++;
+          skippedDetails.push({
+            id: p.id,
+            name: p.name_ar || p.name_en || "مسافر",
+            phone: rawPhone || "فارغ",
+            reason: phoneCheck.reason || "رقم هاتف غير صحيح أو غير مسجل في النظام",
+          });
+          continue;
+        }
+
+        // Generate PDF if needed
+        let docUrl = "";
+        if (config.content_type === "pdf" || config.content_type === "text_and_pdf") {
+          try {
+            const savedDoc = await generateAndSavePassengerDoc(p, host);
+            docUrl = savedDoc.fileUrl;
+          } catch (err: any) {
+            logger.warn({ err }, "Could not generate passenger PDF document in batch schedule");
+          }
+        }
+
         // Queue scheduled message
         const schedTime = calculateScheduledTimestamp(
           config.schedule_mode,
@@ -1372,7 +1401,7 @@ router.post("/travel/whatsapp/batch-process", async (req: Request, res: Response
           logger.error({ e }, "Error queuing scheduled notification");
         }
       } else {
-        // Immediate dispatch
+        // Immediate dispatch / preparation
         const dispatchRes = await processPassengerWhatsAppDispatch(p, config, host);
         if (dispatchRes.success) {
           successCount++;
@@ -1386,6 +1415,14 @@ router.post("/travel/whatsapp/batch-process", async (req: Request, res: Response
             whatsappWebUri: dispatchRes.whatsappWebUri,
             messageText: dispatchRes.messageText,
             gatewayUsed: dispatchRes.gatewayUsed,
+          });
+        } else {
+          skippedCount++;
+          skippedDetails.push({
+            id: p.id,
+            name: p.name_ar || p.name_en || "مسافر",
+            phone: dispatchRes.phone || "فارغ",
+            reason: dispatchRes.error || "تعذر معالجة رقم الهاتف أو جهة الاتصال",
           });
         }
       }

@@ -138,6 +138,7 @@ export default function PassengersPage() {
   const [autoMessageTemplate, setAutoMessageTemplate] = useState<string>("default");
   const [whatsappSkippedModalOpen, setWhatsappSkippedModalOpen] = useState(false);
   const [whatsappSkippedList, setWhatsappSkippedList] = useState<SkippedItem[]>([]);
+  const [whatsappSuccessList, setWhatsappSuccessList] = useState<any[]>([]);
   const [whatsappSuccessCount, setWhatsappSuccessCount] = useState<number>(0);
 
   // Document & PDF import state
@@ -2178,11 +2179,11 @@ const statsModalData = useMemo(() => {
           onBatchComplete={(result) => {
             setWhatsappSuccessCount(result.successCount);
             setWhatsappSkippedList(result.skippedDetails || []);
-            if (result.skippedCount > 0) {
-              setWhatsappSkippedModalOpen(true);
-            } else {
+            setWhatsappSuccessList(result.successList || []);
+            setWhatsappSkippedModalOpen(true);
+            if (result.successCount > 0 && result.skippedCount === 0) {
               toast({
-                title: "تم اكتمال الأتمتة التلقائية بنجاح ✓",
+                title: "تم اكتمال أتمتة الواتساب بنجاح 100% ✓",
                 description: `تم إنجاز إرسال التنبيهات وحفظ ملفات الـ PDF لـ ${result.successCount} مسافر دون أية أخطاء.`,
               });
             }
@@ -2195,12 +2196,13 @@ const statsModalData = useMemo(() => {
           }}
         />
 
-        {/* 3.1 WHATSAPP SKIPPED NUMBERS REPORT MODAL */}
+        {/* 3.1 WHATSAPP FULL AUTOMATION & SKIPPED REPORT MODAL */}
         <WhatsAppSkippedModal
           open={whatsappSkippedModalOpen}
           onOpenChange={setWhatsappSkippedModalOpen}
           skippedList={whatsappSkippedList}
           successCount={whatsappSuccessCount}
+          successList={whatsappSuccessList}
           onEditPassenger={(paxId) => {
             const found = passengers.find((p: any) => String(p.id) === String(paxId));
             if (found) {

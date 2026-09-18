@@ -50,6 +50,7 @@ export interface WhatsAppAutomationModalProps {
     successCount: number;
     skippedCount: number;
     skippedDetails: any[];
+    successList?: any[];
     message?: string;
     isScheduled?: boolean;
   }) => void;
@@ -127,14 +128,20 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
   // Background Runner States
   const [runnerActive, setRunnerActive] = useState(false);
   const [runnerPaused, setRunnerPaused] = useState(false);
+  const [runnerCountdown, setRunnerCountdown] = useState<number>(0);
+  const [isCopiedToClipboard, setIsCopiedToClipboard] = useState(false);
   const [runnerQueue, setRunnerQueue] = useState<any[]>([]);
   const [runnerIndex, setRunnerIndex] = useState(0);
   const [runnerSuccessCount, setRunnerSuccessCount] = useState(0);
   const [runnerSkippedDetails, setRunnerSkippedDetails] = useState<any[]>([]);
   const [currentRunningItem, setCurrentRunningItem] = useState<any | null>(null);
 
-  // Abort controller ref
+  // Runner control refs
   const runnerAbortRef = useRef(false);
+  const runnerPausedRef = useRef(false);
+  const runnerAdvanceRef = useRef<(() => void) | null>(null);
+  const runnerSuccessItemsRef = useRef<any[]>([]);
+  const runnerSkippedItemsRef = useRef<any[]>([]);
 
   // Load saved backend configuration and verify Windows permissions
   useEffect(() => {
@@ -520,45 +527,152 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
   };
 
   // Sequential Dispatcher Function
-  const runSequentialDispatcher = async (items: any[], skipped: any[], totalCount: number) => {
+  const runSequentialDispatcher = async (items: any[], initialSkipped: any[], totalCount: number) => {
     let success = 0;
-    const delayMs = Math.max(1500, (whatsappDelaySec || 3) * 1000);
+    const successList: any[] = [];
+    const currentSkippedList = [...initialSkipped];
+    runnerSuccessItemsRef.current = [];
+    runnerSkippedItemsRef.current = currentSkippedList;
 
     for (let i = 0; i < items.length; i++) {
+      if (runnerAbortRef.current) break;
+
+      // Handle pause state
+      while (runnerPausedRef.current && !runnerAbortRef.current) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
       if (runnerAbortRef.current) break;
 
       const item = items[i];
       setCurrentRunningItem(item);
       setRunnerIndex(i + 1);
 
+      // Auto-copy message text & PDF link to system clipboard
+      if (item.messageText) {
+        try {
+          if (navigator.clipboard) {
+            await navigator.clipboard.writeText(item.messageText);
+            setIsCopiedToClipboard(true);
+            setTimeout(() => setIsCopiedToClipboard(false), 2500);
+          }
+        } catch (clipErr) {
+          console.warn("Could not copy message to clipboard automatically:", clipErr);
+        }
+      }
+
       // Trigger Windows WhatsApp Protocol or Web
+      let dispatchOk = false;
       if (item.whatsappAppUri) {
         try {
           await dispatchToWhatsApp(item.whatsappAppUri, item.whatsappWebUri);
           success++;
+          dispatchOk = true;
           setRunnerSuccessCount(success);
-        } catch (e) {
-          console.warn("Could not dispatch item:", item, e);
+          successList.push(item);
+          runnerSuccessItemsRef.current = [...successList];
+        } catch (e: any) {
+          console.warn("Could not dispatch item to WhatsApp:", item, e);
+          const skipRecord = {
+            id: item.id,
+            name: item.name,
+            phone: item.phone,
+            reason: `تعذر الاتصال ببروتوكول الواتساب: ${e.message || "حظر مؤقت أو خطأ في المتصفح"}`,
+          };
+          currentSkippedList.push(skipRecord);
+          runnerSkippedItemsRef.current = [...currentSkippedList];
+          setRunnerSkippedDetails([...currentSkippedList]);
         }
+      } else {
+        const skipRecord = {
+          id: item.id,
+          name: item.name,
+          phone: item.phone,
+          reason: "لا يوجد رابط محادثة متاح للمسافر",
+        };
+        currentSkippedList.push(skipRecord);
+        runnerSkippedItemsRef.current = [...currentSkippedList];
+        setRunnerSkippedDetails([...currentSkippedList]);
       }
 
-      // Wait between dispatches unless last item
+      // Safe Delay & Auto-advance countdown with manual advance support
       if (i < items.length - 1 && !runnerAbortRef.current) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        const totalDelaySec = Math.max(2, Number(whatsappDelaySec || 3));
+        for (let s = totalDelaySec; s > 0; s--) {
+          if (runnerAbortRef.current) break;
+          while (runnerPausedRef.current && !runnerAbortRef.current) {
+            await new Promise((r) => setTimeout(r, 300));
+          }
+          if (runnerAbortRef.current) break;
+
+          setRunnerCountdown(s);
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(() => {
+              runnerAdvanceRef.current = null;
+              resolve();
+            }, 1000);
+
+            // Register manual advance trigger
+            runnerAdvanceRef.current = () => {
+              clearTimeout(timer);
+              runnerAdvanceRef.current = null;
+              resolve();
+            };
+          });
+
+          // If advance was triggered early
+          if (!runnerAdvanceRef.current) {
+            break;
+          }
+        }
+        setRunnerCountdown(0);
       }
     }
 
     setRunnerActive(false);
     setCurrentRunningItem(null);
+    setRunnerCountdown(0);
 
     if (onBatchComplete) {
       onBatchComplete({
         total: totalCount,
         successCount: success,
-        skippedCount: skipped.length,
-        skippedDetails: skipped,
+        skippedCount: runnerSkippedItemsRef.current.length,
+        skippedDetails: runnerSkippedItemsRef.current,
+        successList: runnerSuccessItemsRef.current,
       });
     }
+  };
+
+  // Instant Advance / Next Passenger
+  const handleAdvanceRunner = () => {
+    if (runnerAdvanceRef.current) {
+      runnerAdvanceRef.current();
+    }
+  };
+
+  // Skip Current Passenger in Runner
+  const handleSkipCurrentRunner = () => {
+    if (currentRunningItem) {
+      const skipRecord = {
+        id: currentRunningItem.id,
+        name: currentRunningItem.name,
+        phone: currentRunningItem.phone,
+        reason: "تم التخطي يدوياً من قبل المستخدم أثناء المشغل",
+      };
+      const updated = [...runnerSkippedItemsRef.current, skipRecord];
+      runnerSkippedItemsRef.current = updated;
+      setRunnerSkippedDetails(updated);
+    }
+    if (runnerAdvanceRef.current) {
+      runnerAdvanceRef.current();
+    }
+  };
+
+  // Toggle Pause / Resume
+  const handleTogglePause = () => {
+    const nextState = !runnerPaused;
+    setRunnerPaused(nextState);
+    runnerPausedRef.current = nextState;
   };
 
   // Stop / Cancel Runner
@@ -566,12 +680,14 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
     runnerAbortRef.current = true;
     setRunnerActive(false);
     setCurrentRunningItem(null);
+    setRunnerCountdown(0);
     if (onBatchComplete) {
       onBatchComplete({
         total: runnerQueue.length + runnerSkippedDetails.length,
         successCount: runnerSuccessCount,
-        skippedCount: runnerSkippedDetails.length,
-        skippedDetails: runnerSkippedDetails,
+        skippedCount: runnerSkippedItemsRef.current.length || runnerSkippedDetails.length,
+        skippedDetails: runnerSkippedItemsRef.current.length ? runnerSkippedItemsRef.current : runnerSkippedDetails,
+        successList: runnerSuccessItemsRef.current,
       });
     }
   };
@@ -1420,33 +1536,49 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
 
       {/* Live WhatsApp Dispatch Runner Progress Dialog */}
       <Dialog open={runnerActive} onOpenChange={() => {}}>
-        <DialogContent className="max-w-md" dir="rtl" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-lg" dir="rtl" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader>
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl animate-pulse">
-                <Send className="w-5 h-5" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl animate-pulse">
+                  <Send className="w-5 h-5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <span>مشغل أتمتة الواتساب لسطح المكتب</span>
+                    {runnerPaused ? (
+                      <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+                        متوقف مؤقتاً
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                        جاري التشغيل الآلي
+                      </span>
+                    )}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-slate-500">
+                    معالجة المسافرين تباعاً مع التخطي الآمن للأخطاء وتوثيق مستندات PDF
+                  </DialogDescription>
+                </div>
               </div>
-              <div>
-                <DialogTitle className="text-sm font-black text-slate-900">
-                  جاري الإرسال عبر تطبيق WhatsApp لسطح المكتب في ويندوز
-                </DialogTitle>
-                <DialogDescription className="text-xs text-slate-500">
-                  معالجة المسافرين في الخلفية مع حفظ ملفات الـ PDF وتطبيق الفاصل الزمني الآمن
-                </DialogDescription>
-              </div>
+              {isCopiedToClipboard && (
+                <span className="text-[10px] bg-emerald-700 text-white font-bold px-2 py-1 rounded-md shadow-sm animate-bounce">
+                  تم نسخ النص للحافظة ✓
+                </span>
+              )}
             </div>
           </DialogHeader>
 
-          <div className="space-y-3.5 py-2">
+          <div className="space-y-3 py-2">
             {/* Progress Counter & Bar */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
               <div className="flex items-center justify-between text-xs font-bold">
                 <span className="text-slate-700">تقدم الإرسال المباشر:</span>
-                <span className="font-mono text-emerald-700">
+                <span className="font-mono text-emerald-800">
                   {runnerIndex} / {runnerQueue.length} ({Math.round(((runnerIndex) / Math.max(1, runnerQueue.length)) * 100)}%)
                 </span>
               </div>
-              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200">
+              <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
                 <div
                   className="bg-emerald-600 h-full transition-all duration-300 rounded-full"
                   style={{ width: `${((runnerIndex) / Math.max(1, runnerQueue.length)) * 100}%` }}
@@ -1454,62 +1586,101 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
               </div>
             </div>
 
-            {/* Current Item Card */}
+            {/* Current Item Card with Direct Action Controls */}
             {currentRunningItem && (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <div className="p-3.5 bg-emerald-50/50 border-2 border-emerald-200 rounded-xl space-y-2.5 shadow-sm">
                 <div className="text-xs font-bold text-slate-900 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>المسافر:</span>
-                    <span className="text-emerald-800 font-black">{currentRunningItem.name}</span>
+                    <User className="w-4 h-4 text-emerald-700" />
+                    <span>المسافر الحالي:</span>
+                    <span className="text-emerald-950 font-black text-sm">{currentRunningItem.name}</span>
                   </div>
-                  <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
+                  <span className="text-xs font-mono bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-md font-black" dir="ltr">
                     +{currentRunningItem.phone}
                   </span>
                 </div>
-                <div className="flex items-center justify-between pt-0.5 border-t border-slate-200">
-                  <span className="text-[11px] text-emerald-700 font-bold">ملف الـ PDF محفوظ في النظام ✓</span>
+
+                <div className="flex items-center justify-between pt-1 border-t border-emerald-100 text-xs">
+                  <span className="text-[11px] text-emerald-800 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    تم توثيق وحفظ بطاقة الـ PDF في النظام
+                  </span>
                   <Button
                     size="sm"
+                    variant="outline"
                     onClick={() => dispatchToWhatsApp(currentRunningItem.whatsappAppUri, currentRunningItem.whatsappWebUri)}
-                    className="h-6 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1 px-2"
+                    className="h-7 text-[11px] border-emerald-300 text-emerald-900 hover:bg-emerald-100 font-bold gap-1 px-2.5"
                   >
                     <ExternalLink className="w-3 h-3" />
-                    فتح المحادثة يدوياً
+                    إعادة فتح المحادثة
                   </Button>
                 </div>
+
+                {/* Runner Interactive Speed Controls */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    onClick={handleAdvanceRunner}
+                    className="h-8 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs gap-1.5 shadow-sm"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    إرسال والانتقال للتالي (Next)
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSkipCurrentRunner}
+                    className="h-8 border-amber-300 text-amber-900 hover:bg-amber-50 font-bold text-xs gap-1"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    تخطي للمسافر التالي (Skip)
+                  </Button>
+                </div>
+
+                {runnerCountdown > 0 && (
+                  <div className="text-[11px] text-center font-bold text-emerald-800 bg-white/80 py-1 rounded-md border border-emerald-200">
+                    ⏱️ الانتقال التلقائي للمسافر التالي بعد <span className="font-mono font-black text-emerald-950">{runnerCountdown}</span> ثانية...
+                  </div>
+                )}
               </div>
             )}
 
             {/* Success & Skip Statistics */}
             <div className="grid grid-cols-2 gap-2 text-center text-xs">
-              <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
-                <div className="text-slate-500 text-[10px]">تم الإرسال بنجاح</div>
-                <div className="font-black text-emerald-800 text-sm font-mono">{runnerSuccessCount}</div>
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <div className="text-slate-500 text-[10px] font-bold">المهام الناجحة المكتملة</div>
+                <div className="font-black text-emerald-800 text-base font-mono">{runnerSuccessCount}</div>
               </div>
-              <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg">
-                <div className="text-slate-500 text-[10px]">أرقام متخطاة بأمان</div>
-                <div className="font-black text-amber-800 text-sm font-mono">{runnerSkippedDetails.length}</div>
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="text-slate-500 text-[10px] font-bold">السجلات المتخطاة بأمان</div>
+                <div className="font-black text-amber-800 text-base font-mono">{runnerSkippedDetails.length}</div>
               </div>
-            </div>
-
-            <div className="text-[10px] text-slate-500 bg-slate-50 p-2 rounded border border-slate-200">
-              💡 <strong>ملاحظة:</strong> يتم فتح محادثة كل مسافر في WhatsApp مع رسالته ورابط ملف الـ PDF الخاص به تلقائياً.
             </div>
           </div>
 
-          <DialogFooter className="border-t pt-3 flex justify-between items-center">
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleStopRunner}
-              className="text-xs font-bold gap-1"
-            >
-              <StopCircle className="w-3.5 h-3.5" />
-              إيقاف الأتمتة الحالية
-            </Button>
-            <div className="text-[11px] text-slate-400 font-mono">
-              فاصل الأمان: {whatsappDelaySec}ث
+          <DialogFooter className="border-t pt-3 flex flex-row items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTogglePause}
+                className="h-8 text-xs font-bold border-slate-300"
+              >
+                {runnerPaused ? "▶️ استئناف الأتمتة" : "⏸️ إيقاف مؤقت"}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleStopRunner}
+                className="h-8 text-xs font-bold gap-1"
+              >
+                <StopCircle className="w-3.5 h-3.5" />
+                إنهاء وعرض التقرير
+              </Button>
+            </div>
+            <div className="text-[11px] text-slate-500 font-mono">
+              الفاصل: {whatsappDelaySec}ث
             </div>
           </DialogFooter>
         </DialogContent>
