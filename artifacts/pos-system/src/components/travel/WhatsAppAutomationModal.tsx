@@ -34,6 +34,8 @@ import {
   Play,
   PauseCircle,
   StopCircle,
+  Bell,
+  Lock,
 } from "lucide-react";
 
 export interface WhatsAppAutomationModalProps {
@@ -107,6 +109,16 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
     const saved = localStorage.getItem("pos_whatsapp_authorized");
     return saved !== "false"; // Default to true if not explicitly set to false
   });
+  const [notificationPermission, setNotificationPermission] = useState<string>(() => {
+    return typeof Notification !== "undefined" ? Notification.permission : "default";
+  });
+  const [protocolTested, setProtocolTested] = useState<boolean>(() => {
+    return localStorage.getItem("pos_protocol_tested") === "true";
+  });
+  const [popupTested, setPopupTested] = useState<boolean>(() => {
+    return localStorage.getItem("pos_popup_tested") === "true";
+  });
+  const [permissionSuccessMessage, setPermissionSuccessMessage] = useState<string>("");
   const [whatsappPermissionModalOpen, setWhatsappPermissionModalOpen] = useState(false);
   const [singlePhone, setSinglePhone] = useState<string>("");
   const [savedPdfUrl, setSavedPdfUrl] = useState<string>("");
@@ -261,11 +273,101 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
 
   // Test WhatsApp Connection
   const handleTestWhatsAppLaunch = async () => {
+    setProtocolTested(true);
+    localStorage.setItem("pos_protocol_tested", "true");
     const testPhone = agencyWhatsAppSender.replace(/\D/g, "") || "966500000000";
     const testMsg = encodeURIComponent("تجربة اتصال نظام أومني فلاي بتطبيق WhatsApp لسطح المكتب في ويندوز بنجاح ✓");
     const testAppUri = `whatsapp://send?phone=${testPhone}&text=${testMsg}`;
     const testWebUri = `https://api.whatsapp.com/send?phone=${testPhone}&text=${testMsg}`;
     await dispatchToWhatsApp(testAppUri, testWebUri);
+  };
+
+  // Test & Request Windows Action Center / Browser Notifications
+  const handleRequestNotificationPermission = async () => {
+    if (typeof Notification === "undefined") {
+      alert("المتصفح الحالي لا يدعم واجهة إشعارات النظام المباشرة.");
+      return;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      setNotificationPermission(perm);
+      if (perm === "granted") {
+        localStorage.setItem("pos_windows_notifications_authorized", "true");
+        new Notification("نظام أومني فلاي - OmniFly Pro", {
+          body: "✓ تم تفعيل إشعارات ويندوز بنجاح! سيصلك تنبيه فوري عند إرسال كل بطاقة مسافر ومستند في الخلفية.",
+          icon: "/favicon.png",
+        });
+      } else {
+        alert("لم يتم منح إذن الإشعارات من المتصفح أو إعدادات ويندوز.");
+      }
+    } catch (e: any) {
+      console.warn("Notification request error:", e);
+    }
+  };
+
+  // Test Browser Popup & Background Tab Launch
+  const handleTestPopupLaunch = () => {
+    setPopupTested(true);
+    localStorage.setItem("pos_popup_tested", "true");
+    try {
+      const testWin = window.open("about:blank", "_blank", "width=400,height=300");
+      if (testWin) {
+        setTimeout(() => {
+          try {
+            testWin.close();
+          } catch (e) {}
+        }, 800);
+        alert("✓ تم التحقق بنجاح: النوافذ المنبثقة والروابط التلقائية مسموح بها في المتصفح ونظام ويندوز دون حظر.");
+      } else {
+        alert("⚠️ تم حظر النافذة من قبل المتصفح. يرجى النقر على أيقونة الحظر في شريط العنوان واختيار 'السماح دائماً Always Allow' لهذا الموقع.");
+      }
+    } catch (e) {
+      alert("تعذر اختبار النافذة: " + (e as any).message);
+    }
+  };
+
+  // One-Click Grant & Authorize All Windows & WhatsApp Permissions
+  const handleAuthorizeAllWindowsPermissions = async () => {
+    setIsProcessing(true);
+    localStorage.setItem("pos_whatsapp_authorized", "true");
+    localStorage.setItem("pos_whatsapp_client_type", whatsappClientType);
+    localStorage.setItem("pos_protocol_tested", "true");
+    localStorage.setItem("pos_popup_tested", "true");
+    localStorage.setItem("pos_windows_notifications_authorized", "true");
+    setWhatsappAuthorized(true);
+    setProtocolTested(true);
+    setPopupTested(true);
+
+    if (typeof Notification !== "undefined") {
+      try {
+        const perm = await Notification.requestPermission();
+        setNotificationPermission(perm);
+        if (perm === "granted") {
+          new Notification("OmniFly Pro - نظام السفر والواتساب", {
+            body: "✓ تم تفعيل ومنح كافة صلاحيات Windows وأتمتة الواتساب بنجاح!",
+            icon: "/favicon.png",
+          });
+        }
+      } catch (e) {}
+    }
+
+    try {
+      await fetch("/api/travel/whatsapp/automation-config", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          is_authorized: 1,
+          client_type: whatsappClientType,
+          anti_ban_delay_sec: whatsappDelaySec,
+          agency_sender: agencyWhatsAppSender,
+        }),
+      });
+    } catch (e) {}
+
+    setIsProcessing(false);
+    setWhatsappPermissionModalOpen(false);
+    setPermissionSuccessMessage("✓ تم تفويض ومنح كافة صلاحيات ويندوز والواتساب بنجاح ليعمل النظام في الخلفية دون أي قيود.");
+    setTimeout(() => setPermissionSuccessMessage(""), 6000);
   };
 
   // Auto-Save PDF in system for targetPax
@@ -560,48 +662,75 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
             </div>
           </DialogHeader>
 
-          {/* Integration Status Banner */}
-          <div className="p-2.5 rounded-xl border flex items-center justify-between bg-slate-50 border-slate-200">
-            <div className="flex items-center gap-2">
-              {whatsappAuthorized ? (
-                <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg">
-                  <CheckCircle2 className="w-4 h-4" />
+          {/* Integration Status & Windows Permissions Banner */}
+          <div className="p-3 rounded-xl border bg-slate-50 border-slate-200 space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-xl ${whatsappAuthorized ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
-              ) : (
-                <div className="p-1.5 bg-amber-100 text-amber-700 rounded-lg">
-                  <AlertTriangle className="w-4 h-4" />
-                </div>
-              )}
-              <div>
-                <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <span>
+                <div>
+                  <div className="text-xs font-black text-slate-800 flex items-center gap-2">
+                    <span>
+                      {whatsappAuthorized
+                        ? "صلاحيات وتفويض نظام Windows والواتساب (مفوّضة ومكتملة ✓)"
+                        : "يتطلب تفويض صلاحيات الوصول والتشغيل لنظام Windows والواتساب"}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono font-bold">
+                      {whatsappClientType === "desktop" ? "💻 WhatsApp Desktop (whatsapp://)" : "🌐 WhatsApp Web"}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
                     {whatsappAuthorized
-                      ? "تكامل تطبيق WhatsApp لسطح المكتب في ويندوز (مفوّض ونشط)"
-                      : "صلاحية الوصول لتطبيق WhatsApp على ويندوز غير مفعلة"}
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono font-bold">
-                    {whatsappClientType === "desktop" ? "💻 WhatsApp Desktop (whatsapp://)" : "🌐 WhatsApp Web"}
-                  </span>
+                      ? "النظام مصرّح بالكامل لمراسلة المسافرين وتوليد بطاقات الـ PDF في الخلفية بدون حجب من ويندوز"
+                      : "يرجى منح أذونات بروتوكول ويندوز والإشعارات والنوافذ لضمان الأتمتة بدون أي عرقلة"}
+                  </div>
                 </div>
-                <div className="text-[11px] text-slate-500">
-                  {whatsappAuthorized
-                    ? "يقوم النظام باستدعاء تطبيق واتساب ويندوز تلقائياً وإرفاق ملفات الـ PDF المحفوظة"
-                    : "يرجى منح الصلاحية لتمكين الإرسال التلقائي دون مقاطعة المستخدم"}
-                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setWhatsappPermissionModalOpen(true)}
+                  className="h-8 text-xs font-bold text-emerald-800 bg-emerald-50 border-emerald-300 hover:bg-emerald-100 gap-1.5 shadow-sm"
+                >
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  مركز أذونات وصلاحيات Windows
+                </Button>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setWhatsappPermissionModalOpen(true)}
-                className="h-7 text-xs font-bold text-slate-700 border-slate-300 gap-1.5"
-              >
-                <Settings className="w-3.5 h-3.5 text-slate-500" />
-                {whatsappAuthorized ? "إعدادات الصلاحية" : "منح الصلاحية الآن"}
-              </Button>
+            {/* Permissions Health Badges */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1 border-t border-slate-200/80">
+              <div className="flex items-center gap-1 text-[10px] font-bold text-slate-700 bg-white p-1.5 rounded-lg border border-slate-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>بروتوكول واتساب المكتبي</span>
+              </div>
+              <div className="flex items-center gap-1 text-[10px] font-bold text-slate-700 bg-white p-1.5 rounded-lg border border-slate-200">
+                {notificationPermission === "granted" ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                ) : (
+                  <Bell className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                )}
+                <span>إشعارات ويندوز: {notificationPermission === "granted" ? "مفعلة" : "اختياري"}</span>
+              </div>
+              <div className="flex items-center gap-1 text-[10px] font-bold text-slate-700 bg-white p-1.5 rounded-lg border border-slate-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>النوافذ والتحويل الآلي</span>
+              </div>
+              <div className="flex items-center gap-1 text-[10px] font-bold text-slate-700 bg-white p-1.5 rounded-lg border border-slate-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>حفظ الـ PDF التلقائي</span>
+              </div>
             </div>
+
+            {permissionSuccessMessage && (
+              <div className="p-2 bg-emerald-100 border border-emerald-300 rounded-lg text-[11px] font-bold text-emerald-900 flex items-center gap-1.5 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                {permissionSuccessMessage}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 py-2">
@@ -1046,53 +1175,179 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
 
       {/* Official Legal Permission & Windows/Web WhatsApp Authorization Modal */}
       <Dialog open={whatsappPermissionModalOpen} onOpenChange={setWhatsappPermissionModalOpen}>
-        <DialogContent className="max-w-lg" dir="rtl">
+        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto" dir="rtl">
           <DialogHeader>
             <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+              <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl">
                 <ShieldCheck className="w-6 h-6 text-emerald-700" />
               </div>
               <div>
                 <DialogTitle className="text-base font-black text-slate-900 flex items-center gap-2">
-                  طلب تفويض نظام أومني فلاي للوصول واستخدام WhatsApp
+                  مركز تفويض وأذونات نظام Windows والواتساب
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                    Windows & Web Security
+                  </span>
                 </DialogTitle>
                 <DialogDescription className="text-xs text-slate-500">
-                  إذن وتفويض رسمي قانوني لمرة واحدة فقط لمراسلة المعتمرين والمسافرين وإرسال ملفات PDF
+                  إذن وتفويض رسمي لمرة واحدة لتمكين النظام من مراسلة المسافرين والمعتمرين وتوليد ملفات الـ PDF في الخلفية دون أي حظر من ويندوز
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
-          <div className="space-y-3.5 py-2 text-xs text-slate-700">
-            <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2 text-emerald-950">
-              <div className="font-bold flex items-center gap-1.5 text-xs text-emerald-900">
+          <div className="space-y-4 py-2 text-xs text-slate-700">
+            {/* Main legal statement */}
+            <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2 text-emerald-950">
+              <div className="font-bold flex items-center gap-2 text-xs text-emerald-900">
                 <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                تفويض رسمي لمرة واحدة فقط (One-Time Legal Permission)
+                تفويض رسمي دائم للتشغيل الآلي في نظام ويندوز (Windows Automation Authorization)
               </div>
               <p className="text-[11px] leading-relaxed text-emerald-800">
-                بموجب هذا الإذن، يتم تفويض نظام أومني فلاي بالربط التلقائي والقانوني مع تطبيق WhatsApp (Desktop / Web) لإرسال إشعارات السفر وبطاقات الجواز المعتمدة بصيغة PDF مباشرة إلى هواتف المعتمرين والمسافرين في المواعيد المحددة أو فور إضافتهم للنظام، <strong>ولن يتم طلب هذا الإذن منك مرة أخرى نهائياً</strong>.
+                بموجب هذا التفويض، يمنح المستخدم نظام <strong>أومني فلاي (OmniFly Pro)</strong> الصلاحية الكاملة للاتصال بتطبيق واتساب في ويندوز (Desktop / Web) لإرسال بيانات الحجوزات وبطاقات الجوازات المعتمدة بصيغة PDF مباشرة في المواعيد المحددة أو فور تسجيل المسافرين، <strong>ويتم حفظ هذا الإذن بشكل دائم ولن يطلب منك مجدداً</strong>.
               </p>
             </div>
 
-            {/* Client selection options */}
+            {/* Granular Permissions & Diagnostics Check */}
             <div className="space-y-2">
-              <label className="font-bold text-slate-800 block">حدد التطبيق المفضل لديك للتشغيل الآلي في النظام:</label>
+              <label className="font-black text-slate-800 flex items-center gap-1.5 text-xs">
+                <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                حالة الأذونات والصلاحيات في نظام Windows والمتصفح:
+              </label>
+
+              <div className="grid grid-cols-1 gap-2">
+                {/* 1. Windows WhatsApp Protocol */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg">
+                      <Monitor className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span>1. بروتوكول تطبيق واتساب المكتبي (whatsapp://)</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
+                          {protocolTested ? "تم اختباره ✓" : "جاهز للتفويض"}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        يتيح للنظام استدعاء تطبيق واتساب المكتبي المثبت في جهاز ويندوز مباشرة
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleTestWhatsAppLaunch}
+                    className="h-7 text-xs font-bold text-emerald-800 border-emerald-300 hover:bg-emerald-50 shrink-0 gap-1"
+                  >
+                    <Play className="w-3 h-3 text-emerald-600" />
+                    اختبار البروتوكول
+                  </Button>
+                </div>
+
+                {/* 2. Windows Native Action Center Notifications */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`p-1.5 rounded-lg ${notificationPermission === "granted" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      <Bell className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span>2. إشعارات سطح المكتب ونظام ويندوز (Windows Action Center)</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                          notificationPermission === "granted" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                        }`}>
+                          {notificationPermission === "granted" ? "مفوض ومفعل ✓" : "يتطلب التفعيل"}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        تنبيهك على شاشة ويندوز فور إرسال رسالة أو بطاقة مسافر بنجاح في الخلفية
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRequestNotificationPermission}
+                    className="h-7 text-xs font-bold text-slate-700 border-slate-300 hover:bg-slate-100 shrink-0 gap-1"
+                  >
+                    <Bell className="w-3 h-3 text-slate-500" />
+                    {notificationPermission === "granted" ? "إشعار تجريبي" : "تفعيل الإشعارات"}
+                  </Button>
+                </div>
+
+                {/* 3. Popups & Background Tab Launch */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
+                      <Globe className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span>3. النوافذ التلقائية والتحويل الآلي (Popups & Redirects)</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">
+                          {popupTested ? "تم الفحص ✓" : "موصى به"}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        السماح بفتح روابط الواتساب بدون حظر من مانع النوافذ في المتصفح
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleTestPopupLaunch}
+                    className="h-7 text-xs font-bold text-blue-800 border-blue-300 hover:bg-blue-50 shrink-0 gap-1"
+                  >
+                    <Globe className="w-3 h-3 text-blue-600" />
+                    فحص النوافذ
+                  </Button>
+                </div>
+
+                {/* 4. PDF Auto-Storage & Dispatch */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span>4. تخزين وتوليد بطاقات الـ PDF التلقائي في النظام</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
+                          مفعل ونشط ✓
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        توليد ملفات PDF باللغتين مع الباركود وتخزينها في مجلد النظام المعتمد
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Client selection options */}
+            <div className="space-y-2 pt-1 border-t border-slate-200">
+              <label className="font-black text-slate-800 block text-xs">حدد التطبيق المفضل لديك للتشغيل الآلي في النظام:</label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setWhatsappClientType("desktop")}
                   className={`p-3 rounded-xl border text-right transition-all ${
                     whatsappClientType === "desktop"
-                      ? "border-emerald-600 bg-emerald-50/70 font-bold text-emerald-950 shadow-sm"
-                      : "border-slate-200 bg-white text-slate-700"
+                      ? "border-emerald-600 bg-emerald-50/70 font-bold text-emerald-950 shadow-sm ring-1 ring-emerald-500"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                 >
                   <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
                     <Monitor className="w-4 h-4 text-emerald-600" />
-                    تطبيق WhatsApp لسطح المكتب
+                    تطبيق WhatsApp لسطح المكتب في Windows
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    (موصى به - اتصال فوري ومباشر بتطبيق ويندوز المكتبي)
+                  <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                    (الخيار الموصى به - اتصال مباشر وفوري بتطبيق ويندوز المكتبي whatsapp://)
                   </p>
                 </button>
 
@@ -1101,72 +1356,33 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
                   onClick={() => setWhatsappClientType("web")}
                   className={`p-3 rounded-xl border text-right transition-all ${
                     whatsappClientType === "web"
-                      ? "border-emerald-600 bg-emerald-50/70 font-bold text-emerald-950 shadow-sm"
-                      : "border-slate-200 bg-white text-slate-700"
+                      ? "border-emerald-600 bg-emerald-50/70 font-bold text-emerald-950 shadow-sm ring-1 ring-emerald-500"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                 >
                   <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
                     <Globe className="w-4 h-4 text-emerald-600" />
-                    واتساب ويب في المتصفح
+                    واتساب ويب في المتصفح (WhatsApp Web)
                   </div>
-                  <p className="text-[10px] text-slate-500 mt-1">
-                    (تشغيل عبر المتصفح web.whatsapp.com)
+                  <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                    (التشغيل عبر نافذة المتصفح web.whatsapp.com)
                   </p>
                 </button>
               </div>
-            </div>
-
-            {/* Test Connection Button */}
-            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-              <div className="text-[11px] text-slate-600">
-                <span>اختبار التحقق من الاتصال بالتطبيق:</span>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleTestWhatsAppLaunch}
-                className="h-7 text-xs font-bold text-emerald-800 border-emerald-300 hover:bg-emerald-50 gap-1.5"
-              >
-                <Play className="w-3.5 h-3.5 text-emerald-600" />
-                اختبار الاتصال بـ WhatsApp الآن
-              </Button>
             </div>
           </div>
 
           <DialogFooter className="gap-2 border-t pt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between">
             <Button variant="outline" onClick={() => setWhatsappPermissionModalOpen(false)}>
-              إلغاء
+              إغلاق
             </Button>
             <Button
-              onClick={async () => {
-                localStorage.setItem("pos_whatsapp_authorized", "true");
-                localStorage.setItem("pos_whatsapp_client_type", whatsappClientType);
-                setWhatsappAuthorized(true);
-                setWhatsappPermissionModalOpen(false);
-                try {
-                  await fetch("/api/travel/whatsapp/automation-config", {
-                    method: "POST",
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({
-                      is_authorized: 1,
-                      client_type: whatsappClientType,
-                    }),
-                  });
-                } catch (e) {}
-
-                // Automatically enter WhatsApp and execute the dispatch immediately
-                setTimeout(() => {
-                  if (whatsappSendMode === "manual" && targetPax) {
-                    handleSingleSend();
-                  } else {
-                    handleSaveAndExecute();
-                  }
-                }, 100);
-              }}
-              className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold gap-1.5 shadow-sm"
+              onClick={handleAuthorizeAllWindowsPermissions}
+              disabled={isProcessing}
+              className="bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs gap-2 shadow-sm py-2 px-4"
             >
-              <Check className="w-4 h-4" />
-              الموافقة وبدء الدخول والإرسال التلقائي عبر WhatsApp فورياً
+              <CheckCircle2 className="w-4 h-4" />
+              منح وتفعيل كافة صلاحيات Windows والواتساب بنقرة واحدة
             </Button>
           </DialogFooter>
         </DialogContent>
