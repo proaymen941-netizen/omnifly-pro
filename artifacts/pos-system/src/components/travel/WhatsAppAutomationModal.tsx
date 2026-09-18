@@ -106,8 +106,7 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
 
   // Permissions & Authorization
   const [whatsappAuthorized, setWhatsappAuthorized] = useState<boolean>(() => {
-    const saved = localStorage.getItem("pos_whatsapp_authorized");
-    return saved !== "false"; // Default to true if not explicitly set to false
+    return localStorage.getItem("pos_whatsapp_authorized") === "true";
   });
   const [notificationPermission, setNotificationPermission] = useState<string>(() => {
     return typeof Notification !== "undefined" ? Notification.permission : "default";
@@ -137,9 +136,17 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
   // Abort controller ref
   const runnerAbortRef = useRef(false);
 
-  // Load saved backend configuration
+  // Load saved backend configuration and verify Windows permissions
   useEffect(() => {
     if (open) {
+      const isAuth = localStorage.getItem("pos_whatsapp_authorized") === "true";
+      setWhatsappAuthorized(isAuth);
+      
+      // Auto-prompt permission dialog if not authorized yet
+      if (!isAuth) {
+        setWhatsappPermissionModalOpen(true);
+      }
+
       fetch("/api/travel/whatsapp/automation-config", {
         headers: getAuthHeaders(),
       })
@@ -157,6 +164,10 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
             if (cfg.agency_sender) setAgencyWhatsAppSender(cfg.agency_sender);
             if (cfg.auto_apply_on_new_passenger !== undefined) {
               setWhatsappAutoApplyNew(Boolean(cfg.auto_apply_on_new_passenger));
+            }
+            if (cfg.is_authorized) {
+              setWhatsappAuthorized(true);
+              localStorage.setItem("pos_whatsapp_authorized", "true");
             }
           }
         })
@@ -247,26 +258,25 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
       }
     }
 
-    // 2. Web browser on Windows:
-    if (whatsappClientType === "web") {
-      window.open(webUri, "_blank");
-    } else {
-      // Windows Desktop Application Protocol (whatsapp://)
-      console.log("Dispatching to Windows WhatsApp Desktop App via protocol uri:", appUri);
+    // 2. Web browser or iframe on Windows:
+    const targetUri = whatsappClientType === "web" ? webUri : appUri;
+    try {
+      const a = document.createElement("a");
+      a.href = targetUri;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try {
+          if (document.body.contains(a)) document.body.removeChild(a);
+        } catch (e) {}
+      }, 500);
+    } catch (e) {
       try {
-        // Modern and extremely reliable way to trigger OS-level protocol:
-        // By opening a popup or directly navigating, Windows prompt pops up instantly or launches Desktop App
-        const w = window.open(appUri, "_blank");
-        if (!w || w.closed || typeof w.closed === "undefined") {
-          // If popup is blocked or doesn't open, use direct navigation
-          window.location.href = appUri;
-        } else {
-          setTimeout(() => {
-            try { w.close(); } catch (e) {}
-          }, 1000);
-        }
-      } catch (e) {
-        window.location.href = appUri;
+        window.open(targetUri, "_blank");
+      } catch (err) {
+        window.location.href = targetUri;
       }
     }
   };
@@ -467,8 +477,8 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
       const itemsToDispatch = batchData.processedItems || [];
       const skippedList = batchData.skippedDetails || [];
 
-      // If scheduled mode or automatic mode (no manual prompt needed):
-      if (batchData.isScheduled || whatsappSendMode === "auto" || itemsToDispatch.length === 0) {
+      // If scheduled mode (future time specified by user):
+      if (batchData.isScheduled && whatsappScheduleMode !== "immediate") {
         if (onBatchComplete) {
           onBatchComplete({
             total: batchData.total || targetList.length,
@@ -481,16 +491,28 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
         return;
       }
 
-      // 4. If manual desktop client launching is specifically selected:
-      runnerAbortRef.current = false;
-      setRunnerQueue(itemsToDispatch);
-      setRunnerSkippedDetails(skippedList);
-      setRunnerIndex(0);
-      setRunnerSuccessCount(0);
-      setRunnerPaused(false);
-      setRunnerActive(true);
+      // If immediate dispatch mode: launch the sequential dispatcher for all processed items
+      if (itemsToDispatch.length > 0) {
+        runnerAbortRef.current = false;
+        setRunnerQueue(itemsToDispatch);
+        setRunnerSkippedDetails(skippedList);
+        setRunnerIndex(0);
+        setRunnerSuccessCount(0);
+        setRunnerPaused(false);
+        setRunnerActive(true);
 
-      runSequentialDispatcher(itemsToDispatch, skippedList, batchData.total || targetList.length);
+        runSequentialDispatcher(itemsToDispatch, skippedList, batchData.total || targetList.length);
+      } else {
+        if (onBatchComplete) {
+          onBatchComplete({
+            total: batchData.total || targetList.length,
+            successCount: 0,
+            skippedCount: skippedList.length,
+            skippedDetails: skippedList,
+            message: batchData.message || "لم يتم العثور على مسافرين مؤهلين للإرسال، أو تم تخطي جميع السجلات غير الصالحة بأمان.",
+          });
+        }
+      }
     } catch (err: any) {
       setIsProcessing(false);
       alert("حدث خطأ أثناء معالجة الإعدادات: " + (err.message || ""));
@@ -1121,11 +1143,19 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
 
               {/* Live Preview Card */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                  <span>معاينة حية لشكل رسالة الواتساب:</span>
-                  <span className="text-[10px] text-slate-400">تحديث تلقائي فوري</span>
-                </label>
-                <div className="bg-[#fcfbf9] border border-amber-200/70 p-3 rounded-xl max-h-52 overflow-y-auto text-xs font-mono text-slate-800 whitespace-pre-wrap leading-relaxed shadow-inner">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">معاينة حية لشكل رسالة الواتساب:</label>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleTestWhatsAppLaunch}
+                    className="h-6 text-[10px] font-bold text-emerald-800 border-emerald-300 hover:bg-emerald-50 gap-1 px-2"
+                  >
+                    <Send className="w-3 h-3 text-emerald-600" />
+                    اختبار فتح الواتساب فوراً
+                  </Button>
+                </div>
+                <div className="bg-[#fcfbf9] border border-amber-200/70 p-3 rounded-xl max-h-44 overflow-y-auto text-xs font-mono text-slate-800 whitespace-pre-wrap leading-relaxed shadow-inner">
                   {composePreviewMessage()}
                 </div>
               </div>
@@ -1426,15 +1456,27 @@ export const WhatsAppAutomationModal: React.FC<WhatsAppAutomationModalProps> = (
 
             {/* Current Item Card */}
             {currentRunningItem && (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-                <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>المسافر الحالي:</span>
-                  <span className="text-emerald-800">{currentRunningItem.name}</span>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="text-xs font-bold text-slate-900 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>المسافر:</span>
+                    <span className="text-emerald-800 font-black">{currentRunningItem.name}</span>
+                  </div>
+                  <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
+                    +{currentRunningItem.phone}
+                  </span>
                 </div>
-                <div className="text-[11px] text-slate-600 flex items-center justify-between">
-                  <span>رقم الهاتف: <strong className="font-mono" dir="ltr">+{currentRunningItem.phone}</strong></span>
-                  <span className="text-emerald-700 font-bold">ملف الـ PDF محفوظ ✓</span>
+                <div className="flex items-center justify-between pt-0.5 border-t border-slate-200">
+                  <span className="text-[11px] text-emerald-700 font-bold">ملف الـ PDF محفوظ في النظام ✓</span>
+                  <Button
+                    size="sm"
+                    onClick={() => dispatchToWhatsApp(currentRunningItem.whatsappAppUri, currentRunningItem.whatsappWebUri)}
+                    className="h-6 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-1 px-2"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    فتح المحادثة يدوياً
+                  </Button>
                 </div>
               </div>
             )}

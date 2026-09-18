@@ -219,36 +219,42 @@ export function buildHotelJournalLines(params: {
 router.get("/travel/passengers", (req, res) => {
   const { customer_id, search, visa_type, travel_status, as_of_date } = req.query;
 
-  // Ensure Umrah test pilgrims exist
+  // Ensure Umrah test pilgrims exist with valid phone numbers
   try {
+    let mohammedCust: any = db.prepare("SELECT id, phone FROM customers WHERE name LIKE '%محمد اليمني%'").get();
+    if (!mohammedCust) {
+      const info = db.prepare("INSERT INTO customers (name, phone, address) VALUES ('محمد اليمني', '966555123456', 'مكة المكرمة / جدة')").run();
+      mohammedCust = { id: Number(info.lastInsertRowid), phone: '966555123456' };
+    }
+
     const umrahCount = (db.prepare("SELECT COUNT(*) as c FROM travel_passengers WHERE passport_number IN ('14800339', '10270557', '14800340')").get() as any)?.c || 0;
     if (umrahCount === 0) {
-      let mohammedCust: any = db.prepare("SELECT id FROM customers WHERE name LIKE '%محمد اليمني%'").get();
-      if (!mohammedCust) {
-        const info = db.prepare("INSERT INTO customers (name, phone, address) VALUES ('محمد اليمني', '0555123456', 'مكة المكرمة / جدة')").run();
-        mohammedCust = { id: Number(info.lastInsertRowid) };
-      }
       const pilgrims = [
-        { name_ar: "علي عبدالله علي الشهابي", name_en: "Ali Abdullah Ali Al-Shehabi", passport_number: "14800339", visa_type: "تأشيرة عمره", program_duration_days: 86, travel_date: "2026-06-16", expected_exit_date: "2026-09-10", remaining_days: 3 },
-        { name_ar: "يوسف محمد سود الشريف", name_en: "Youssef Mohammed Sood Al-Sharif", passport_number: "10270557", visa_type: "تأشيرة عمره", program_duration_days: 85, travel_date: "2026-06-22", expected_exit_date: "2026-09-15", remaining_days: 8 },
-        { name_ar: "عبدالله علي صالح الشهابي", name_en: "Abdullah Ali Saleh Al-Shehabi", passport_number: "14800340", visa_type: "تأشيرة عمره", program_duration_days: 86, travel_date: "2026-06-16", expected_exit_date: "2026-09-10", remaining_days: 3 }
+        { name_ar: "علي عبدالله علي الشهابي", name_en: "Ali Abdullah Ali Al-Shehabi", passport_number: "14800339", visa_type: "تأشيرة عمره", program_duration_days: 86, travel_date: "2026-06-16", expected_exit_date: "2026-09-10", remaining_days: 3, phone: "967771234567" },
+        { name_ar: "يوسف محمد سود الشريف", name_en: "Youssef Mohammed Sood Al-Sharif", passport_number: "10270557", visa_type: "تأشيرة عمره", program_duration_days: 85, travel_date: "2026-06-22", expected_exit_date: "2026-09-15", remaining_days: 8, phone: "967772345678" },
+        { name_ar: "عبدالله علي صالح الشهابي", name_en: "Abdullah Ali Saleh Al-Shehabi", passport_number: "14800340", visa_type: "تأشيرة عمره", program_duration_days: 86, travel_date: "2026-06-16", expected_exit_date: "2026-09-10", remaining_days: 3, phone: "967773456789" }
       ];
       for (const p of pilgrims) {
         db.prepare(`
           INSERT INTO travel_passengers (
             customer_id, name_ar, name_en, passport_number, visa_type,
             program_duration_days, travel_date, expected_exit_date, remaining_days,
-            nationality, gender, travel_status, passport_type
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'يمني', 'ذكر', 'داخل مكة', 'عادي')
-        `).run(mohammedCust.id, p.name_ar, p.name_en, p.passport_number, p.visa_type, p.program_duration_days, p.travel_date, p.expected_exit_date, p.remaining_days);
+            nationality, gender, travel_status, passport_type, phone
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'يمني', 'ذكر', 'داخل مكة', 'عادي', ?)
+        `).run(mohammedCust.id, p.name_ar, p.name_en, p.passport_number, p.visa_type, p.program_duration_days, p.travel_date, p.expected_exit_date, p.remaining_days, p.phone);
       }
+    } else {
+      // Auto-update existing sample pilgrims if phone is empty
+      db.prepare("UPDATE travel_passengers SET phone = '967771234567' WHERE passport_number = '14800339' AND (phone IS NULL OR phone = '')").run();
+      db.prepare("UPDATE travel_passengers SET phone = '967772345678' WHERE passport_number = '10270557' AND (phone IS NULL OR phone = '')").run();
+      db.prepare("UPDATE travel_passengers SET phone = '967773456789' WHERE passport_number = '14800340' AND (phone IS NULL OR phone = '')").run();
     }
   } catch (seedErr) {
     console.warn("Umrah on-demand seed notice:", seedErr);
   }
 
   let sql = `
-    SELECT p.*, c.name as customer_name, c.customer_type
+    SELECT p.*, c.name as customer_name, c.customer_type, c.phone as customer_phone
     FROM travel_passengers p
     LEFT JOIN customers c ON c.id = p.customer_id
     WHERE 1=1

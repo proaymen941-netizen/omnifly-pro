@@ -891,7 +891,23 @@ export async function processPassengerWhatsAppDispatch(
   whatsappWebUri?: string;
   gatewayUsed?: string;
 }> {
-  const rawPhone = pax.phone || pax.mobile || pax.customer_phone || "";
+  let rawPhone = pax.phone || pax.mobile || pax.customer_phone || "";
+  if (!rawPhone && pax.customer_id) {
+    try {
+      const cust = db.prepare("SELECT phone, mobile FROM customers WHERE id = ?").get(pax.customer_id) as any;
+      if (cust) {
+        rawPhone = cust.phone || cust.mobile || "";
+      }
+    } catch (e) {}
+  }
+  if (!rawPhone && pax.id) {
+    try {
+      const p = db.prepare("SELECT p.phone, c.phone as cust_phone FROM travel_passengers p LEFT JOIN customers c ON c.id = p.customer_id WHERE p.id = ?").get(pax.id) as any;
+      if (p) {
+        rawPhone = p.phone || p.cust_phone || "";
+      }
+    } catch (e) {}
+  }
   const phoneCheck = validateAndFormatPhone(rawPhone, config.agency_sender || "966");
 
   const host = reqOrigin || "http://localhost:3000";
