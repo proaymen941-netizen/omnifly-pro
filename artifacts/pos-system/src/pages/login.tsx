@@ -29,7 +29,7 @@ export default function Login() {
     }
   }, [user, setLocation]);
 
-  const { data: settings } = useQuery({
+  const { data: settings, refetch: refetchSettings } = useQuery({
     queryKey: ["settings"],
     queryFn: () => fetch("/api/settings").then(r => r.json()).catch(() => ({})),
   });
@@ -133,10 +133,11 @@ export default function Login() {
       setUsername("admin");
       setPassword("admin123");
       setActivationCodeInput("");
+      refetchSettings();
 
       toast({
-        title: "تم تفعيل الجهاز بنجاح! 🎉✅",
-        description: data.message || "تم اعتماد هذا الجهاز بنجاح. يمكنك الآن تسجيل الدخول."
+        title: "ألف مبروك تم الترخيص! 🎉✅",
+        description: "قم بتسجيل الدخول للنظام باسم المستخدم admin وكلمة السر admin123"
       });
     } catch (err: any) {
       toast({
@@ -841,8 +842,10 @@ export default function Login() {
                 <ShieldCheck className="w-10 h-10 text-yellow-300" />
               </div>
               <div>
-                <h3 className="text-xl font-black">ألف مبروك! تم ترخيص وتفعيل النظام بنجاح 🎉✅</h3>
-                <p className="text-xs text-white/90 font-bold mt-0.5">نظام إدارة السفريات والسياحة الشامل (OmniFly Pro)</p>
+                <h3 className="text-xl font-black">ألف مبروك تم الترخيص! 🎉✅</h3>
+                <p className="text-xs text-white/95 font-bold mt-1">
+                  قم بتسجيل الدخول للنظام باسم المستخدم <span className="font-mono bg-white/20 px-1.5 py-0.5 rounded text-yellow-200">admin</span> وكلمة السر <span className="font-mono bg-white/20 px-1.5 py-0.5 rounded text-yellow-200">admin123</span>
+                </p>
               </div>
             </div>
 

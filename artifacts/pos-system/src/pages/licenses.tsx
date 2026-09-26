@@ -553,11 +553,11 @@ export default function LicensesPage() {
                 <span>مولد ومصدر أكواد التراخيص السحابية والمكتبية (Cloud & Device License Generator)</span>
               </CardTitle>
               <Badge variant="outline" className="border-amber-600 text-amber-900 bg-amber-200/80 font-bold text-xs px-3 py-1">
-                تشفير رقمي آمن HMAC-SHA256 🔑
+                تشفير رقمي مشفر متضمن البيانات AES-256-GCM 🔑
               </Badge>
             </div>
             <CardDescription className="text-amber-900/90 text-xs font-medium">
-              أدخل بصمة جهاز العميل (HWID) وحدد وقت الترخيص وعدد الأجهزة المسموح بها لتوليد كود ترخيص رقمي معتمد ومسجل، يمكنك إرساله للعميل لتفعيل النظام مباشرة.
+              أدخل بصمة جهاز العميل (HWID) واسم المنشأة وتاريخ الانتهاء وعدد الأجهزة لتوليد كود ترخيص رقمي مشفر يحتوي بداخله على كافة بيانات الترخيص، ليقوم جهاز العميل بفك تشفيره وإنشاء الترخيص تلقائياً فور لصقه.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5 space-y-4">
@@ -701,12 +701,12 @@ export default function LicensesPage() {
             {generatedCode && (
               <div className="p-5 rounded-2xl bg-slate-950 text-white border-2 border-amber-500 space-y-4 shadow-xl animate-in fade-in-50">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-                  <div className="space-y-1">
+                  <div className="space-y-1.5 flex-1 min-w-0">
                     <span className="text-xs text-amber-400 font-bold flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      كود الترخيص الرقمي المعتمد للبصمة ({genDeviceId}):
+                      كود الترخيص الرقمي المشفر المعتمد للبصمة ({genDeviceId}):
                     </span>
-                    <div className="font-mono text-xl sm:text-2xl font-black text-white tracking-widest dir-ltr">
+                    <div className="font-mono text-xs sm:text-sm font-black text-amber-200 bg-slate-900 p-3 rounded-xl border border-slate-800 break-all select-all dir-ltr text-left">
                       {generatedCode}
                     </div>
                   </div>

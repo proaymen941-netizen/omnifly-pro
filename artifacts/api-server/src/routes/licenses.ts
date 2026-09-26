@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { db, logAudit } from "../lib/sqlite";
+import { db, logAudit, hashPassword } from "../lib/sqlite";
 import { getAuthUser, checkLicenseStatus, getSystemDeviceId, CURRENT_SYSTEM_VERSION } from "./auth";
 import crypto from "node:crypto";
+import zlib from "node:zlib";
 import os from "node:os";
 
 const router = Router();
@@ -33,40 +34,129 @@ export function encryptLicenseToken(payload: Partial<LicensePayload>): string {
 
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", AES_KEY, iv);
-  const jsonStr = JSON.stringify(cleanPayload);
-  let encrypted = cipher.update(jsonStr, "utf8", "base64url");
-  encrypted += cipher.final("base64url");
-  const tag = cipher.getAuthTag().toString("base64url");
-  return `ACT-LIC-${iv.toString("base64url")}-${tag}-${encrypted}`;
+  const compressed = zlib.deflateRawSync(Buffer.from(JSON.stringify(cleanPayload), "utf8"));
+  const encryptedBuf = Buffer.concat([cipher.update(compressed), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const packed = Buffer.concat([iv, tag, encryptedBuf]).toString("base64url");
+  return `OMNI-LIC.${packed}`;
 }
 
 export function decryptLicenseToken(token: string): LicensePayload | null {
   if (!token || typeof token !== "string") return null;
-  let cleanToken = token.trim().replace(/[\r\n\t\s]+/g, "");
+  const raw = token.trim().replace(/[\r\n\t\s]+/g, "");
 
-  if (cleanToken.startsWith("ACT-LIC-") || cleanToken.startsWith("OMNI-LIC-") || cleanToken.startsWith("OMNI-")) {
-    if (cleanToken.startsWith("ACT-LIC-") || cleanToken.startsWith("OMNI-LIC-")) {
-      cleanToken = cleanToken.substring(8);
-    } else if (cleanToken.startsWith("OMNI-")) {
-      cleanToken = cleanToken.substring(5);
+  // 1. Try packed OMNI-LIC.<base64url> format (12-byte IV + 16-byte AuthTag + Ciphertext)
+  if (raw.toUpperCase().startsWith("OMNI-LIC.") || raw.toUpperCase().startsWith("ACT-LIC.")) {
+    try {
+      const body = raw.substring(raw.indexOf(".") + 1);
+      const buf = Buffer.from(body, "base64url");
+      if (buf.length > 28) {
+        const iv = buf.subarray(0, 12);
+        const tag = buf.subarray(12, 28);
+        const enc = buf.subarray(28);
+        const decipher = crypto.createDecipheriv("aes-256-gcm", AES_KEY, iv);
+        decipher.setAuthTag(tag);
+        const dec = Buffer.concat([decipher.update(enc), decipher.final()]);
+        try {
+          const inflated = zlib.inflateRawSync(dec).toString("utf8");
+          return JSON.parse(inflated) as LicensePayload;
+        } catch {
+          return JSON.parse(dec.toString("utf8")) as LicensePayload;
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Try ACT-LIC-<16-char-iv>-<22-char-tag>-<ciphertext> format (fixed length slicing to avoid '-' collision in base64url)
+  let cleanToken = raw;
+  if (cleanToken.toUpperCase().startsWith("ACT-LIC-") || cleanToken.toUpperCase().startsWith("OMNI-LIC-")) {
+    cleanToken = cleanToken.substring(cleanToken.indexOf("-", 4) + 1);
+  } else if (cleanToken.toUpperCase().startsWith("OMNI-") && cleanToken.length > 45) {
+    cleanToken = cleanToken.substring(5);
+  }
+
+  if (cleanToken.length > 40) {
+    // Method A: Fixed width base64url (12 bytes = 16 chars, 16 bytes = 22 chars)
+    if (cleanToken[16] === "-" && cleanToken[39] === "-") {
+      try {
+        const iv = Buffer.from(cleanToken.substring(0, 16), "base64url");
+        const tag = Buffer.from(cleanToken.substring(17, 39), "base64url");
+        const ciphertext = cleanToken.substring(40);
+        const decipher = crypto.createDecipheriv("aes-256-gcm", AES_KEY, iv);
+        decipher.setAuthTag(tag);
+        let decrypted = decipher.update(ciphertext, "base64url", "utf8");
+        decrypted += decipher.final("utf8");
+        return JSON.parse(decrypted) as LicensePayload;
+      } catch {}
+    }
+
+    // Method B: Split by '-' fallback
+    const parts = cleanToken.split("-");
+    if (parts.length >= 3) {
+      try {
+        const iv = Buffer.from(parts[0], "base64url");
+        const tag = Buffer.from(parts[1], "base64url");
+        const ciphertext = parts.slice(2).join("-");
+        const decipher = crypto.createDecipheriv("aes-256-gcm", AES_KEY, iv);
+        decipher.setAuthTag(tag);
+        let decrypted = decipher.update(ciphertext, "base64url", "utf8");
+        decrypted += decipher.final("utf8");
+        return JSON.parse(decrypted) as LicensePayload;
+      } catch {}
     }
   }
 
-  const parts = cleanToken.split("-");
-  if (parts.length < 3) return null;
+  return null;
+}
 
-  try {
-    const iv = Buffer.from(parts[0], "base64url");
-    const tag = Buffer.from(parts[1], "base64url");
-    const ciphertext = parts.slice(2).join("-");
-    const decipher = crypto.createDecipheriv("aes-256-gcm", AES_KEY, iv);
-    decipher.setAuthTag(tag);
-    let decrypted = decipher.update(ciphertext, "base64url", "utf8");
-    decrypted += decipher.final("utf8");
-    return JSON.parse(decrypted) as LicensePayload;
-  } catch (e) {
-    return null;
+function computeLegacyHmacCode(deviceId: string, expiresAt: string, version: string, devicesLimit: number, fourPart: boolean = true): string {
+  const cleanDevice = String(deviceId || "").trim().toUpperCase();
+  const cleanExp = String(expiresAt || "").trim();
+  const cleanVer = String(version || CURRENT_SYSTEM_VERSION).trim();
+  const cleanLimit = String(devicesLimit || 1).trim();
+  const payload = fourPart
+    ? `${cleanDevice}|${cleanExp}|${cleanVer}|${cleanLimit}`
+    : `${cleanDevice}|${cleanExp}|${cleanVer}`;
+  const sig = crypto.createHmac("sha256", DEV_SIGNING_SALT).update(payload).digest("hex").toUpperCase();
+  return fourPart
+    ? `ACT-${sig.substring(0, 4)}-${sig.substring(4, 8)}-${sig.substring(8, 12)}-${sig.substring(12, 16)}`
+    : `ACT-${sig.substring(0, 4)}-${sig.substring(4, 8)}-${sig.substring(8, 12)}`;
+}
+
+export function findLegacyHmacMatch(activationCode: string, candidateDevices: string[]): { hwid: string; exp: string; limit: number; ver: string } | null {
+  const cleanCode = String(activationCode || "").trim().toUpperCase();
+  if (!cleanCode.startsWith("ACT-")) return null;
+
+  const isFourPart = cleanCode.split("-").length === 5;
+  const uniqueDevices = Array.from(new Set(candidateDevices.map(d => String(d || "").trim().toUpperCase()).filter(Boolean)));
+  if (!uniqueDevices.includes("*")) uniqueDevices.push("*");
+
+  const limits = [1, 2, 3, 5, 10, 20, 50, 100, 999];
+  const versions = Array.from(new Set([CURRENT_SYSTEM_VERSION, "1.1.0", "1.0.0", "*"]));
+
+  // Scan dates from 2025-01-01 to 2036-12-31
+  const startMs = new Date("2025-01-01T00:00:00Z").getTime();
+  const totalDays = 4383; // 12 years
+
+  for (const dev of uniqueDevices) {
+    for (const ver of versions) {
+      for (let d = 0; d < totalDays; d++) {
+        const dt = new Date(startMs + d * 86400000).toISOString().split("T")[0];
+        if (isFourPart) {
+          for (const lim of limits) {
+            if (computeLegacyHmacCode(dev, dt, ver, lim, true) === cleanCode) {
+              return { hwid: dev, exp: dt, limit: lim, ver };
+            }
+          }
+        } else {
+          if (computeLegacyHmacCode(dev, dt, ver, 1, false) === cleanCode) {
+            return { hwid: dev, exp: dt, limit: 1, ver };
+          }
+        }
+      }
+    }
   }
+  return null;
 }
 
 export function generateActivationCode(deviceId: string, expiresAt: string, version: string = CURRENT_SYSTEM_VERSION, devicesLimit: number = 1): string {
@@ -422,10 +512,85 @@ router.post("/licenses/generate-code", (req, res) => {
   });
 });
 
-// Public / Login Screen: Activate Device directly with Activation Code or License Key
+function applyActivatedLicenseToDatabase(params: {
+  rawCode: string;
+  clientName: string;
+  expiresAt: string;
+  devicesLimit: number;
+  licenseType: "desktop" | "cloud";
+  targetVersion: string;
+  notes?: string;
+  deviceIdsToAuthorize: string[];
+  deviceName?: string;
+}) {
+  const {
+    rawCode,
+    clientName,
+    expiresAt,
+    devicesLimit,
+    licenseType,
+    notes,
+    deviceIdsToAuthorize,
+    deviceName
+  } = params;
+
+  // Always authorize CURRENT_SYSTEM_VERSION so version mismatch never blocks login after activation
+  const effectiveVersion = CURRENT_SYSTEM_VERSION;
+
+  let lic = db.prepare("SELECT * FROM licenses WHERE active=1 ORDER BY id DESC LIMIT 1").get() as any;
+  if (!lic) {
+    const r = db.prepare(`
+      INSERT INTO licenses (license_key, client_name, devices_limit, expires_at, active, status, target_version, license_type, notes)
+      VALUES (?, ?, ?, ?, 1, 'active', ?, ?, ?)
+    `).run(rawCode, clientName, devicesLimit, expiresAt, effectiveVersion, licenseType, notes || "تم التفعيل بكود الترخيص الرقمي المشفر");
+    lic = db.prepare("SELECT * FROM licenses WHERE id=?").get(r.lastInsertRowid);
+  } else {
+    db.prepare(`
+      UPDATE licenses 
+      SET license_key=?, client_name=?, devices_limit=?, expires_at=?, target_version=?, license_type=?, notes=?, active=1, status='active'
+      WHERE id=?
+    `).run(rawCode, clientName, devicesLimit, expiresAt, effectiveVersion, licenseType, notes || lic.notes || "تم التفعيل بكود الترخيص الرقمي المشفر", lic.id);
+  }
+
+  // Update businessName in settings table so Login screen & Header display the licensed client name
+  try {
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('businessName', ?)").run(clientName);
+  } catch (e) {}
+
+  // Ensure all candidate device IDs (including system HWID) are authorized in license_devices
+  const uniqueDevs = Array.from(new Set(deviceIdsToAuthorize.map(d => String(d || "").trim().toUpperCase()).filter(d => d && d !== "*")));
+  for (const devId of uniqueDevs) {
+    const existingDev = db.prepare("SELECT * FROM license_devices WHERE license_id=? AND device_id=?").get(lic.id, devId) as any;
+    if (existingDev) {
+      db.prepare("UPDATE license_devices SET status='authorized', authorized_by='كود ترخيص مشفر معتمد', last_active=datetime('now', 'localtime') WHERE id=?").run(existingDev.id);
+    } else {
+      db.prepare(`
+        INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
+        VALUES (?, ?, ?, 'كود ترخيص مشفر معتمد', 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
+      `).run(lic.id, devId, deviceName || `جهاز مفعل (${os.hostname()})`);
+    }
+  }
+
+  // Ensure default admin account (admin / admin123) is active and ready for login
+  try {
+    const adminUser = db.prepare("SELECT id FROM users WHERE username='admin'").get() as any;
+    const adminHash = hashPassword("admin123");
+    if (!adminUser) {
+      db.prepare(`INSERT INTO users (username, password_hash, name, role, active, can_discount, perm_create_invoice, perm_edit_invoice, perm_cancel_invoice, perm_return, perm_view_prices, perm_view_profits, perm_edit_stock, perm_stocktake, perm_edit_entries, perm_close_periods, perm_view_salaries) VALUES (?,?,?,?,1,1,1,1,1,1,1,1,1,1,1,1,1)`)
+        .run("admin", adminHash, "مدير عام النظام", "admin");
+    } else {
+      db.prepare("UPDATE users SET active=1, role='admin' WHERE username='admin'").run();
+    }
+  } catch (e) {}
+
+  return lic;
+}
+
+// Public / Login Screen: Activate Device directly with Encrypted Activation Code or License Key
 router.post("/licenses/activate-with-code", (req, res) => {
   const { device_id, activation_code, expires_at, target_version, device_name, client_name } = req.body;
-  const currentDev = (device_id || getSystemDeviceId()).trim().toUpperCase();
+  const sysDev = getSystemDeviceId().trim().toUpperCase();
+  const currentDev = (device_id ? String(device_id).trim().toUpperCase() : sysDev) || sysDev;
 
   if (!activation_code || !String(activation_code).trim()) {
     res.status(400).json({ error: "يرجى إدخال كود التفعيل الممنوح لك" });
@@ -434,7 +599,7 @@ router.post("/licenses/activate-with-code", (req, res) => {
 
   const rawCode = String(activation_code).trim().replace(/[\r\n\t\s]+/g, "");
 
-  // 1. Primary Strategy: Decrypt self-contained encrypted license token
+  // 1. Primary Strategy: Decrypt self-contained encrypted license token (OMNI-LIC. or ACT-LIC-)
   const decrypted = decryptLicenseToken(rawCode);
   if (decrypted) {
     const targetHwid = String(decrypted.hwid || "*").trim().toUpperCase();
@@ -444,57 +609,38 @@ router.post("/licenses/activate-with-code", (req, res) => {
     const targetType = decrypted.type === "cloud" ? "cloud" : "desktop";
     const targetVer = String(decrypted.ver || CURRENT_SYSTEM_VERSION).trim();
 
-    // Check device match
-    if (targetHwid !== "*" && targetHwid !== currentDev) {
+    // Check device match (allow if cloud, wildcard *, or matches either reported device_id or server HWID)
+    if (targetType !== "cloud" && targetHwid !== "*" && targetHwid !== currentDev && targetHwid !== sysDev) {
       res.status(400).json({
-        error: `كود الترخيص مخصص لبصمة جهاز أخرى (${targetHwid})، ولا يطابق بصمة جهازك الحالي (${currentDev}). يرجى التأكد من طلب كود مخصص لبصمة جهازك.`
+        error: `كود الترخيص مخصص لبصمة جهاز أخرى (${targetHwid})، ولا يطابق بصمة جهازك الحالي (${currentDev}). يرجى التأكد من إرسال بصمة جهازك الصحيحة للمطور.`
       });
       return;
     }
 
-    // Check expiration date
-    if (new Date(targetExp) < new Date()) {
+    // Check expiration date (end of day)
+    const expDateObj = new Date(`${targetExp}T23:59:59`);
+    if (!isNaN(expDateObj.getTime()) && expDateObj < new Date()) {
       res.status(400).json({
         error: `كود الترخيص منتهي الصلاحية بتاريخ (${targetExp}). يرجى التواصل مع إدارة ومطور النظام لتجديد الترخيص.`
       });
       return;
     }
 
-    // Auto-update or insert in local SQLite database
-    let lic = db.prepare("SELECT * FROM licenses WHERE active=1 ORDER BY id DESC LIMIT 1").get() as any;
-    if (!lic) {
-      const r = db.prepare(`
-        INSERT INTO licenses (license_key, client_name, devices_limit, expires_at, active, status, target_version, license_type, notes)
-        VALUES (?, ?, ?, ?, 1, 'active', ?, ?, ?)
-      `).run(rawCode, targetClient, targetLimit, targetExp, targetVer, targetType, decrypted.notes || "تم التفعيل بكود الترخيص الرقمي المشفر");
-      lic = db.prepare("SELECT * FROM licenses WHERE id=?").get(r.lastInsertRowid);
-    } else {
-      db.prepare(`
-        UPDATE licenses 
-        SET license_key=?, client_name=?, devices_limit=?, expires_at=?, target_version=?, license_type=?, active=1, status='active'
-        WHERE id=?
-      `).run(rawCode, targetClient, targetLimit, targetExp, targetVer, targetType, lic.id);
-    }
-
-    // Update settings business name if needed
-    try {
-      db.prepare("UPDATE settings SET business_name=? WHERE id=1").run(targetClient);
-    } catch (e) {}
-
-    // Authorize device in local license_devices table
-    const existingDev = db.prepare("SELECT * FROM license_devices WHERE license_id=? AND device_id=?").get(lic.id, currentDev) as any;
-    if (existingDev) {
-      db.prepare("UPDATE license_devices SET status='authorized', authorized_by='كود ترخيص مشفر معتمد', last_active=datetime('now', 'localtime') WHERE id=?").run(existingDev.id);
-    } else {
-      db.prepare(`
-        INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
-        VALUES (?, ?, ?, 'كود ترخيص مشفر معتمد', 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
-      `).run(lic.id, currentDev, device_name || `جهاز مفعل (${os.hostname()})`);
-    }
+    applyActivatedLicenseToDatabase({
+      rawCode,
+      clientName: targetClient,
+      expiresAt: targetExp,
+      devicesLimit: targetLimit,
+      licenseType: targetType,
+      targetVersion: targetVer,
+      notes: decrypted.notes,
+      deviceIdsToAuthorize: [currentDev, sysDev, targetHwid],
+      deviceName: device_name
+    });
 
     res.json({
       success: true,
-      message: "ألف مبروك تم ترخيص وتفعيل النظام بنجاح! 🎉✅ قم بتسجيل الدخول للنظام باسم المستخدم: admin وكلمة السر: admin123",
+      message: "ألف مبروك تم الترخيص! قم بتسجيل الدخول للنظام باسم المستخدم admin وكلمة السر admin123",
       clientName: targetClient,
       expiresAt: targetExp,
       devicesLimit: targetLimit,
@@ -518,34 +664,32 @@ router.post("/licenses/activate-with-code", (req, res) => {
   `).get(rawCode, rawCode.toUpperCase()) as any;
 
   if (licByKey) {
-    if (new Date(licByKey.expires_at) < new Date()) {
+    const expDateObj = new Date(`${licByKey.expires_at}T23:59:59`);
+    if (!isNaN(expDateObj.getTime()) && expDateObj < new Date()) {
       res.status(400).json({ error: `كود الترخيص منتهي الصلاحية بتاريخ (${licByKey.expires_at}). يرجى التواصل مع إدارة النظام للتجديد.` });
       return;
     }
-    const devCount = (db.prepare("SELECT COUNT(*) as c FROM license_devices WHERE license_id=? AND (status IS NULL OR status='authorized' OR status='active')").get(licByKey.id) as any)?.c || 0;
-    const existing = db.prepare("SELECT * FROM license_devices WHERE license_id=? AND device_id=?").get(licByKey.id, currentDev) as any;
-    
-    if (!existing && devCount >= (licByKey.devices_limit || 1)) {
-      res.status(400).json({ error: `تم استنفاد الحد الأقصى للأجهزة المرخصة لهذا الكود (${devCount}/${licByKey.devices_limit}). يرجى ترقية عدد الأجهزة مع المطور.` });
-      return;
-    }
 
-    if (existing) {
-      db.prepare("UPDATE license_devices SET status='authorized', last_active=datetime('now', 'localtime') WHERE id=?").run(existing.id);
-    } else {
-      db.prepare(`
-        INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
-        VALUES (?, ?, ?, 'تفعيل مباشر بكود الترخيص', 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
-      `).run(licByKey.id, currentDev, device_name || `جهاز مفعل (${os.hostname()})`);
-    }
+    applyActivatedLicenseToDatabase({
+      rawCode: licByKey.license_key,
+      clientName: licByKey.client_name || "عميل مرخص",
+      expiresAt: licByKey.expires_at,
+      devicesLimit: licByKey.devices_limit || 1,
+      licenseType: licByKey.license_type === "cloud" ? "cloud" : "desktop",
+      targetVersion: licByKey.target_version || CURRENT_SYSTEM_VERSION,
+      notes: licByKey.notes,
+      deviceIdsToAuthorize: [currentDev, sysDev],
+      deviceName: device_name
+    });
 
     res.json({
       success: true,
-      message: "ألف مبروك تم ترخيص وتفعيل النظام بنجاح! 🎉✅ قم بتسجيل الدخول للنظام باسم المستخدم: admin وكلمة السر: admin123",
+      message: "ألف مبروك تم الترخيص! قم بتسجيل الدخول للنظام باسم المستخدم admin وكلمة السر admin123",
       deviceId: currentDev,
       clientName: licByKey.client_name,
       expiresAt: licByKey.expires_at,
       devicesLimit: licByKey.devices_limit,
+      licenseType: licByKey.license_type || "desktop",
       credentials: {
         username: "admin",
         password: "admin123"
@@ -554,55 +698,38 @@ router.post("/licenses/activate-with-code", (req, res) => {
     return;
   }
 
-  // 3. Tertiary Strategy: Cryptographic HMAC signature fallback (for legacy codes)
-  const exp = expires_at || "2027-12-31";
-  const ver = target_version || CURRENT_SYSTEM_VERSION;
-  
-  const limitsToTest = [1, 2, 3, 5, 10, 20, 50, 100, 999];
-  let verified = false;
-  let matchedLimit = 1;
-
-  for (const lim of limitsToTest) {
-    if (verifyActivationCode(rawCode, currentDev, exp, ver, lim) ||
-        verifyActivationCode(rawCode, currentDev, exp, "*", lim) ||
-        verifyActivationCode(rawCode, currentDev, "2027-12-31", CURRENT_SYSTEM_VERSION, lim) ||
-        verifyActivationCode(rawCode, "*", exp, ver, lim)) {
-      verified = true;
-      matchedLimit = lim;
-      break;
-    }
-  }
-
-  if (verified) {
-    let lic = db.prepare("SELECT * FROM licenses WHERE active=1 ORDER BY id DESC LIMIT 1").get() as any;
-    if (!lic) {
-      const r = db.prepare(`
-        INSERT INTO licenses (license_key, client_name, devices_limit, expires_at, active, status, target_version, license_type)
-        VALUES (?, ?, ?, ?, 1, 'active', ?, 'desktop')
-      `).run(rawCode, client_name || "عميل مرخص", matchedLimit, exp, ver);
-      lic = db.prepare("SELECT * FROM licenses WHERE id=?").get(r.lastInsertRowid);
-    } else {
-      db.prepare("UPDATE licenses SET expires_at=?, target_version=?, active=1, status='active', devices_limit=? WHERE id=?").run(exp, ver, matchedLimit, lic.id);
+  // 3. Tertiary Strategy: Smart Legacy HMAC Date & Limit Scanner (supports ACT-XXXX-XXXX-XXXX-XXXX codes across all dates)
+  const hmacMatch = findLegacyHmacMatch(rawCode, [currentDev, sysDev, "HW-3789-3288-C91A", "*"]);
+  if (hmacMatch) {
+    const expDateObj = new Date(`${hmacMatch.exp}T23:59:59`);
+    if (!isNaN(expDateObj.getTime()) && expDateObj < new Date()) {
+      res.status(400).json({
+        error: `كود الترخيص منتهي الصلاحية بتاريخ (${hmacMatch.exp}). يرجى التواصل مع إدارة النظام للتجديد.`
+      });
+      return;
     }
 
-    // Register device
-    const existing = db.prepare("SELECT * FROM license_devices WHERE license_id=? AND device_id=?").get(lic.id, currentDev) as any;
-    if (existing) {
-      db.prepare("UPDATE license_devices SET status='authorized', authorized_by='كود تفعيل رقمي مشفر', last_active=datetime('now', 'localtime') WHERE id=?").run(existing.id);
-    } else {
-      db.prepare(`
-        INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
-        VALUES (?, ?, ?, 'كود تفعيل رقمي مشفر', 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
-      `).run(lic.id, currentDev, device_name || `جهاز مفعل (${os.hostname()})`);
-    }
+    const resolvedClient = client_name || "شركة أومني لسفريات والسياحة";
+    applyActivatedLicenseToDatabase({
+      rawCode,
+      clientName: resolvedClient,
+      expiresAt: hmacMatch.exp,
+      devicesLimit: hmacMatch.limit,
+      licenseType: "desktop",
+      targetVersion: hmacMatch.ver,
+      notes: `تم التفعيل بكود رقمي (${rawCode}) للبصمة (${hmacMatch.hwid})`,
+      deviceIdsToAuthorize: [currentDev, sysDev, hmacMatch.hwid],
+      deviceName: device_name
+    });
 
     res.json({
       success: true,
-      message: "ألف مبروك تم ترخيص وتفعيل النظام بنجاح! 🎉✅ قم بتسجيل الدخول للنظام باسم المستخدم: admin وكلمة السر: admin123",
+      message: "ألف مبروك تم الترخيص! قم بتسجيل الدخول للنظام باسم المستخدم admin وكلمة السر admin123",
       deviceId: currentDev,
-      clientName: client_name || lic.client_name,
-      expiresAt: exp,
-      devicesLimit: matchedLimit,
+      clientName: resolvedClient,
+      expiresAt: hmacMatch.exp,
+      devicesLimit: hmacMatch.limit,
+      licenseType: "desktop",
       credentials: {
         username: "admin",
         password: "admin123"
