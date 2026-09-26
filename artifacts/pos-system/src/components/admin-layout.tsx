@@ -128,6 +128,36 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [devPass, setDevPass] = useState("");
   const [devLoading, setDevLoading] = useState(false);
   const [devError, setDevError] = useState<string | null>(null);
+  const [lockActivationCode, setLockActivationCode] = useState("");
+  const [lockActivating, setLockActivating] = useState(false);
+  const [lockActivationError, setLockActivationError] = useState<string | null>(null);
+  const [lockSuccessModalData, setLockSuccessModalData] = useState<any>(null);
+
+  const handleLockActivateCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!lockActivationCode.trim()) return;
+    setLockActivating(true);
+    setLockActivationError(null);
+    try {
+      const res = await fetch("/api/licenses/activate-with-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activation_code: lockActivationCode.trim(),
+          device_id: deviceHwid
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "كود الترخيص غير مطابق لبصمة الجهاز");
+      setLockActivationCode("");
+      setLicenseBlockedReason(null);
+      setLockSuccessModalData(data);
+    } catch (err: any) {
+      setLockActivationError(err.message || "فشل تفعيل كود الترخيص");
+    } finally {
+      setLockActivating(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -1229,6 +1259,37 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               </div>
             )}
 
+            {/* Instant Encrypted Code Activation inside Lock Screen */}
+            <form onSubmit={handleLockActivateCode} className="bg-slate-950/90 border border-emerald-500/40 rounded-2xl p-4 text-right space-y-2.5">
+              <div className="text-xs font-black text-emerald-400 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Key className="w-4 h-4" />
+                  تفعيل فوري بكود الترخيص الرقمي المشفر:
+                </span>
+              </div>
+              {lockActivationError && (
+                <div className="text-[11px] bg-red-500/20 border border-red-500/50 text-red-300 p-2 rounded-lg font-bold">
+                  {lockActivationError}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={lockActivationCode}
+                  onChange={(e) => setLockActivationCode(e.target.value)}
+                  placeholder="ألصق كود الترخيص المشفر OMNI-LIC... أو ACT-..."
+                  className="flex-1 bg-slate-900 border border-slate-700 text-white rounded-lg px-3 py-2 text-xs font-mono font-bold text-center focus:border-emerald-400 outline-none dir-ltr"
+                />
+                <button
+                  type="submit"
+                  disabled={!lockActivationCode.trim() || lockActivating}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-lg shadow-md transition-colors disabled:opacity-50 shrink-0"
+                >
+                  {lockActivating ? "جاري التفعيل..." : "اعتماد وتفعيل"}
+                </button>
+              </div>
+            </form>
+
             {/* Main Action: Go to Login for Developer */}
             <div className="space-y-2.5 pt-1">
               <button
@@ -1314,6 +1375,66 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 <span>للدعم الفني وتحديث التراخيص:</span>
                 <a href="tel:777146387" className="text-amber-400 hover:underline font-bold dir-ltr inline-block">777146387</a>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {lockSuccessModalData && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-[99999] p-4 font-sans" dir="rtl">
+          <div className="bg-white rounded-3xl border-4 border-emerald-500 shadow-2xl max-w-lg w-full overflow-hidden transform animate-in fade-in-50 zoom-in-95 duration-200 text-right">
+            <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-slate-900 text-white p-6 flex items-center gap-4">
+              <div className="p-3 bg-white/20 rounded-2xl shadow-inner animate-bounce">
+                <Shield className="w-10 h-10 text-yellow-300" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black">ألف مبروك تم الترخيص! 🎉✅</h3>
+                <p className="text-xs text-white/95 font-bold mt-1">
+                  قم بتسجيل الدخول للنظام باسم المستخدم <span className="font-mono bg-white/20 px-1.5 py-0.5 rounded text-yellow-200">admin</span> وكلمة السر <span className="font-mono bg-white/20 px-1.5 py-0.5 rounded text-yellow-200">admin123</span>
+                </p>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl space-y-2 text-xs font-bold text-slate-700">
+                <div className="flex justify-between">
+                  <span>المنشأة المرخص لها:</span>
+                  <span className="font-black text-slate-900">{lockSuccessModalData.clientName}</span>
+                </div>
+                <div className="flex justify-between border-t border-emerald-100 pt-1.5">
+                  <span>تاريخ انتهاء الترخيص:</span>
+                  <span className="font-mono font-black text-emerald-800">{lockSuccessModalData.expiresAt}</span>
+                </div>
+                <div className="flex justify-between border-t border-emerald-100 pt-1.5">
+                  <span>عدد الأجهزة المسموح بها:</span>
+                  <span className="font-black text-emerald-800">{lockSuccessModalData.devicesLimit} أجهزة</span>
+                </div>
+                <div className="flex justify-between border-t border-emerald-100 pt-1.5">
+                  <span>بصمة الجهاز المعتمد:</span>
+                  <span className="font-mono font-black text-slate-900 dir-ltr">{lockSuccessModalData.deviceId}</span>
+                </div>
+              </div>
+              <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 text-center space-y-2">
+                <div className="text-xs font-black text-yellow-400">بيانات تسجيل الدخول الافتراضية للنظام:</div>
+                <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <div>
+                    <span className="text-[11px] text-slate-400 block">اسم المستخدم</span>
+                    <span className="font-mono text-sm font-black text-yellow-300">admin</span>
+                  </div>
+                  <div className="border-r border-slate-800">
+                    <span className="text-[11px] text-slate-400 block">كلمة السر</span>
+                    <span className="font-mono text-sm font-black text-yellow-300">admin123</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="bg-slate-50 px-6 py-4 flex justify-end border-t">
+              <button
+                type="button"
+                onClick={() => setLockSuccessModalData(null)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-6 py-2.5 rounded-xl shadow"
+              >
+                حسناً، متابعة استخدام النظام 🚀
+              </button>
             </div>
           </div>
         </div>
