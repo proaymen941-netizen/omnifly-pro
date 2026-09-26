@@ -273,6 +273,76 @@ export const activeDatabasePath = dbPath;
 export function getActiveDatabasePath(): string {
   return dbPath;
 }
+export function createDatabaseInstance(filepath: string): DatabaseWrapper {
+  return new DatabaseWrapper(filepath);
+}
+
+export function resetEntireDatabase(): { success: boolean; message: string; deletedCounts: Record<string, number> } {
+  const tablesToClear = [
+    "order_items", "orders", "return_items", "returns",
+    "sales_installments", "pos_draft_items", "pos_drafts",
+    "quote_items", "quotes", "table_order_items", "table_orders", "reservations",
+    "purchase_items", "purchase_invoices", "purchase_return_items", "purchase_returns", "purchase_order_items", "purchase_orders",
+    "vouchers", "journal_entry_lines", "journal_entries",
+    "expenses", "cash_drawer_logs", "cash_transfers", "bank_reconciliations", "shifts",
+    "passengers", "travel_groups", "travel_visas", "travel_bus_bookings", "travel_hotel_bookings", "travel_flight_tickets",
+    "travel_invoice_items", "travel_invoices", "travel_quotation_items", "travel_quotations", "travel_tasks", "travel_suppliers",
+    "travel_insurance", "travel_transport", "travel_documents", "travel_approvals", "travel_bsp_reconciliation",
+    "products", "product_categories", "product_units", "product_batches", "stock_adjustments", "stocktake_records", "price_tiers",
+    "customers", "suppliers", "customer_points", "point_transactions",
+    "notifications", "whatsapp_logs", "audit_logs", "activity_logs", "chat_messages"
+  ];
+
+  const deletedCounts: Record<string, number> = {};
+
+  db.exec("PRAGMA foreign_keys = OFF;");
+  
+  for (const table of tablesToClear) {
+    try {
+      const count = (db.prepare(`SELECT COUNT(*) as c FROM ${table}`).get() as any)?.c || 0;
+      db.exec(`DELETE FROM ${table};`);
+      deletedCounts[table] = count;
+      try {
+        db.exec(`DELETE FROM sqlite_sequence WHERE name='${table}';`);
+      } catch (e) {}
+    } catch (e) {
+      // Table might not exist in some versions, ignore
+    }
+  }
+
+  // Reset safes balance to zero
+  try {
+    db.exec("UPDATE safes SET balance = 0;");
+  } catch (e) {}
+
+  // Reseed clean default products, categories and basic settings if empty
+  try {
+    const catCheck = (db.prepare("SELECT COUNT(*) as c FROM product_categories").get() as any)?.c || 0;
+    if (catCheck === 0) {
+      db.prepare("INSERT INTO product_categories (name, icon) VALUES ('خدمات السفر والسياحة', 'Plane')").run();
+      db.prepare("INSERT INTO product_categories (name, icon) VALUES ('خدمات الحج والعمرة', 'Building')").run();
+      db.prepare("INSERT INTO product_categories (name, icon) VALUES ('تأشيرات وإقامات', 'FileText')").run();
+    }
+  } catch (e) {}
+
+  // Ensure developer & admin users remain with full access
+  try {
+    const devHash = hashPassword("dev123");
+    const adminHash = hashPassword("admin123");
+    db.prepare(`INSERT OR REPLACE INTO users (id, username, password_hash, name, role, active, can_discount, perm_create_invoice, perm_edit_invoice, perm_cancel_invoice, perm_return, perm_view_prices, perm_view_profits, perm_edit_stock, perm_stocktake, perm_edit_entries, perm_close_periods, perm_view_salaries) 
+      VALUES (1, 'admin', ?, 'مدير عام الشركة', 'admin', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)`).run(adminHash);
+    db.prepare(`INSERT OR REPLACE INTO users (id, username, password_hash, name, role, active, can_discount, perm_create_invoice, perm_edit_invoice, perm_cancel_invoice, perm_return, perm_view_prices, perm_view_profits, perm_edit_stock, perm_stocktake, perm_edit_entries, perm_close_periods, perm_view_salaries) 
+      VALUES (2, 'developer', ?, 'مطور النظام', 'developer', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)`).run(devHash);
+  } catch (e) {}
+
+  db.exec("PRAGMA foreign_keys = ON;");
+
+  return {
+    success: true,
+    message: "تم تصفير ومحو كافة بيانات وسجلات قاعدة البيانات بنجاح، وتهيئة النظام كنسخة جديدة ونظيفة بالكامل.",
+    deletedCounts
+  };
+}
 
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");

@@ -385,6 +385,12 @@ function Router() {
       <Route path="/backup-restore">
         <ProtectedRoute requireAdmin><BackupRestorePage /></ProtectedRoute>
       </Route>
+      <Route path="/backup">
+        <ProtectedRoute requireAdmin><BackupRestorePage /></ProtectedRoute>
+      </Route>
+      <Route path="/system-backup">
+        <ProtectedRoute requireAdmin><BackupRestorePage /></ProtectedRoute>
+      </Route>
       <Route path="/reports/cashier-statement">
         <ProtectedRoute requireAdmin><CashierStatement /></ProtectedRoute>
       </Route>
