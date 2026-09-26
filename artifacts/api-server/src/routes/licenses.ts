@@ -7,19 +7,26 @@ import os from "node:os";
 const router = Router();
 const DEV_SIGNING_SALT = "OMNIFLY-PRO-ENTERPRISE-DEVELOPER-SECRET-KEY-2027";
 
-export function generateActivationCode(deviceId: string, expiresAt: string, version: string = CURRENT_SYSTEM_VERSION): string {
+export function generateActivationCode(deviceId: string, expiresAt: string, version: string = CURRENT_SYSTEM_VERSION, devicesLimit: number = 1): string {
   const cleanDevice = String(deviceId || "").trim().toUpperCase();
   const cleanExp = String(expiresAt || "").trim();
   const cleanVer = String(version || CURRENT_SYSTEM_VERSION).trim();
-  const payload = `${cleanDevice}|${cleanExp}|${cleanVer}`;
+  const cleanLimit = String(devicesLimit || 1).trim();
+  const payload = `${cleanDevice}|${cleanExp}|${cleanVer}|${cleanLimit}`;
   const sig = crypto.createHmac("sha256", DEV_SIGNING_SALT).update(payload).digest("hex").toUpperCase();
-  return `ACT-${sig.substring(0, 4)}-${sig.substring(4, 8)}-${sig.substring(8, 12)}`;
+  return `ACT-${sig.substring(0, 4)}-${sig.substring(4, 8)}-${sig.substring(8, 12)}-${sig.substring(12, 16)}`;
 }
 
-export function verifyActivationCode(activationCode: string, deviceId: string, expiresAt: string, version: string = CURRENT_SYSTEM_VERSION): boolean {
+export function verifyActivationCode(activationCode: string, deviceId: string, expiresAt: string, version: string = CURRENT_SYSTEM_VERSION, devicesLimit: number = 1): boolean {
   const cleanCode = String(activationCode || "").trim().toUpperCase();
-  const expected = generateActivationCode(deviceId, expiresAt, version);
-  return cleanCode === expected;
+  const expected = generateActivationCode(deviceId, expiresAt, version, devicesLimit);
+  if (cleanCode === expected) return true;
+
+  // Backward compatibility with legacy 3-part format:
+  const payloadLegacy = `${String(deviceId || "").trim().toUpperCase()}|${String(expiresAt || "").trim()}|${String(version || CURRENT_SYSTEM_VERSION).trim()}`;
+  const sigLegacy = crypto.createHmac("sha256", DEV_SIGNING_SALT).update(payloadLegacy).digest("hex").toUpperCase();
+  const expectedLegacy = `ACT-${sigLegacy.substring(0, 4)}-${sigLegacy.substring(4, 8)}-${sigLegacy.substring(8, 12)}`;
+  return cleanCode === expectedLegacy;
 }
 
 function requireDeveloper(req: any, res: any): boolean {
@@ -243,21 +250,92 @@ router.post("/licenses/authorize-device", (req, res) => {
   res.json({ success: true, message: "تم ترخيص الجهاز بنجاح", devices });
 });
 
-// Developer: Generate an Offline Activation Code
+// Developer: Generate an Offline or Cloud Activation Code with complete client & device limits
 router.post("/licenses/generate-code", (req, res) => {
   if (!requireDeveloper(req, res)) return;
-  const { device_id, expires_at, target_version } = req.body;
-  if (!device_id || !expires_at) {
-    res.status(400).json({ error: "يرجى تحديد بصمة الجهاز وتاريخ الانتهاء" });
+  const user = getAuthUser(req)!;
+  const { 
+    device_id, 
+    client_name, 
+    expires_at, 
+    duration_days, 
+    duration_months, 
+    devices_limit, 
+    license_type, 
+    target_version, 
+    notes,
+    auto_save 
+  } = req.body;
+
+  if (!device_id) {
+    res.status(400).json({ error: "يرجى إدخال بصمة الجهاز (HWID)" });
     return;
   }
+
+  // Determine expiration date
+  let finalExpiresAt = expires_at ? String(expires_at).trim() : "";
+  if (!finalExpiresAt) {
+    const d = new Date();
+    if (duration_days) {
+      d.setDate(d.getDate() + Number(duration_days));
+    } else if (duration_months) {
+      d.setMonth(d.getMonth() + Number(duration_months));
+    } else {
+      d.setFullYear(d.getFullYear() + 1); // default 1 year
+    }
+    finalExpiresAt = d.toISOString().split("T")[0];
+  }
+
+  const cleanDevice = String(device_id).trim().toUpperCase();
+  const cleanClient = String(client_name || "عميل OmniFly Pro").trim();
+  const cleanLimit = Math.max(1, Number(devices_limit) || 1);
+  const cleanType = license_type === "cloud" ? "cloud" : "desktop";
   const version = target_version || CURRENT_SYSTEM_VERSION;
-  const code = generateActivationCode(device_id, expires_at, version);
+
+  const code = generateActivationCode(cleanDevice, finalExpiresAt, version, cleanLimit);
+  const licenseKey = `OMNI-${cleanType.toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+  // If auto_save requested or by default, register in licenses table so both offline signature and online key work
+  let savedLicenseId: number | undefined;
+  if (auto_save !== false) {
+    const r = db.prepare(`
+      INSERT INTO licenses (license_key, client_name, devices_limit, expires_at, active, status, target_version, license_type, notes)
+      VALUES (?, ?, ?, ?, 1, 'active', ?, ?, ?)
+    `).run(code, cleanClient, cleanLimit, finalExpiresAt, version, cleanType, notes || `تم إصدار كود تفعيل لبصمة (${cleanDevice})`);
+    
+    savedLicenseId = Number(r.lastInsertRowid);
+
+    // Also pre-authorize the specified device
+    try {
+      db.prepare(`
+        INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
+        VALUES (?, ?, ?, ?, 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
+      `).run(savedLicenseId, cleanDevice, `جهاز (${cleanClient})`, `المطور: ${user.name}`);
+    } catch (e) {}
+
+    logAudit(user.id, user.name, "توليد كود ترخيص", `تم توليد كود ترخيص لـ (${cleanClient}) على البصمة (${cleanDevice}) حتى (${finalExpiresAt})`);
+  }
+
+  const shareText = `📋 *بيانات تفعيل وترخيص نظام OmniFly Pro:*\n` +
+    `👤 *المنشأة/العميل:* ${cleanClient}\n` +
+    `💻 *بصمة الجهاز المعتمد:* ${cleanDevice}\n` +
+    `🔑 *كود التفعيل الرقمي:* ${code}\n` +
+    `📅 *صلاحية الترخيص حتى:* ${finalExpiresAt}\n` +
+    `🔢 *عدد الأجهزة المسموح بها:* ${cleanLimit} جهاز\n` +
+    `🏢 *نوع الترخيص:* ${cleanType === "cloud" ? "سحابي شامل" : "ترخيص أجهزة مكتبية"}\n\n` +
+    `*طريقة التفعيل:* افتح النظام في شاشة تسجيل الدخول، اضغط على زر (تفعيل الترخيص / إدخال كود الترخيص) وألصق الكود أعلاه واضغط (اعتماد وتفعيل).`;
+
   res.json({
-    deviceId: device_id.trim().toUpperCase(),
-    expiresAt: expires_at.trim(),
+    success: true,
+    deviceId: cleanDevice,
+    clientName: cleanClient,
+    expiresAt: finalExpiresAt,
+    devicesLimit: cleanLimit,
+    licenseType: cleanType,
     targetVersion: version,
-    activationCode: code
+    activationCode: code,
+    shareText,
+    licenseId: savedLicenseId
   });
 });
 
@@ -266,84 +344,121 @@ router.post("/licenses/activate-with-code", (req, res) => {
   const { device_id, activation_code, expires_at, target_version, device_name, client_name } = req.body;
   const currentDev = (device_id || getSystemDeviceId()).trim().toUpperCase();
 
-  if (!activation_code) {
-    res.status(400).json({ error: "يرجى إدخال كود التفعيل" });
+  if (!activation_code || !String(activation_code).trim()) {
+    res.status(400).json({ error: "يرجى إدخال كود التفعيل الممنوح لك" });
     return;
   }
 
-  // 1. Try cryptographic offline code verification
-  const exp = expires_at || "2027-12-31";
-  const ver = target_version || CURRENT_SYSTEM_VERSION;
-  const isValidCode = verifyActivationCode(activation_code, currentDev, exp, ver) ||
-                      verifyActivationCode(activation_code, currentDev, exp, "*") ||
-                      verifyActivationCode(activation_code, currentDev, "2027-12-31", CURRENT_SYSTEM_VERSION);
+  const rawCode = String(activation_code).trim();
 
-  if (isValidCode) {
-    let lic = db.prepare("SELECT * FROM licenses WHERE active=1 ORDER BY id DESC LIMIT 1").get() as any;
-    if (!lic) {
-      const newKey = `OMNI-ACTIVATED-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      const r = db.prepare(`
-        INSERT INTO licenses (license_key, client_name, devices_limit, expires_at, active, status, target_version)
-        VALUES (?, ?, 10, ?, 1, 'active', ?)
-      `).run(newKey, client_name || "عميل مرخص", exp, ver);
-      lic = db.prepare("SELECT * FROM licenses WHERE id=?").get(r.lastInsertRowid);
-    } else {
-      // Update license if needed
-      db.prepare("UPDATE licenses SET expires_at=?, target_version=?, active=1, status='active' WHERE id=?").run(exp, ver, lic.id);
-    }
+  // 1. Try finding in database by license_key directly
+  const licByKey = db.prepare(`
+    SELECT * FROM licenses 
+    WHERE (license_key=? OR license_key=?) 
+      AND active=1 
+      AND (status IS NULL OR status='active')
+    ORDER BY id DESC LIMIT 1
+  `).get(rawCode, rawCode.toUpperCase()) as any;
 
-    // Register the device
-    const existing = db.prepare("SELECT * FROM license_devices WHERE license_id=? AND device_id=?").get(lic.id, currentDev) as any;
-    if (existing) {
-      db.prepare("UPDATE license_devices SET status='authorized', authorized_by='كود تفعيل رقمي معتمد', last_active=datetime('now', 'localtime') WHERE id=?").run(existing.id);
-    } else {
-      db.prepare(`
-        INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
-        VALUES (?, ?, ?, 'كود تفعيل رقمي معتمد', 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
-      `).run(lic.id, currentDev, device_name || `جهاز مفعل (${os.hostname()})`);
-    }
-
-    res.json({
-      success: true,
-      message: "تم تفعيل وترخيص هذا الجهاز بنجاح! يمكنك الآن تسجيل الدخول للنظام.",
-      deviceId: currentDev,
-      expiresAt: exp
-    });
-    return;
-  }
-
-  // 2. Try license_key lookup
-  const licByKey = db.prepare("SELECT * FROM licenses WHERE license_key=? AND active=1 AND (status IS NULL OR status='active')").get(activation_code.trim()) as any;
   if (licByKey) {
     if (new Date(licByKey.expires_at) < new Date()) {
-      res.status(400).json({ error: "مفتاح الترخيص منتهي الصلاحية" });
+      res.status(400).json({ error: `كود الترخيص منتهي الصلاحية بتاريخ (${licByKey.expires_at}). يرجى التواصل مع إدارة النظام للتجديد.` });
       return;
     }
-    const devCount = (db.prepare("SELECT COUNT(*) as c FROM license_devices WHERE license_id=? AND (status IS NULL OR status='authorized')").get(licByKey.id) as any).c;
-    if (devCount >= (licByKey.devices_limit || 10)) {
-      res.status(400).json({ error: `تم استنفاد الحد الأقصى للأجهزة المرخصة لهذا المفتاح (${devCount}/${licByKey.devices_limit})` });
-      return;
-    }
+    const devCount = (db.prepare("SELECT COUNT(*) as c FROM license_devices WHERE license_id=? AND (status IS NULL OR status='authorized' OR status='active')").get(licByKey.id) as any)?.c || 0;
     const existing = db.prepare("SELECT * FROM license_devices WHERE license_id=? AND device_id=?").get(licByKey.id, currentDev) as any;
+    
+    if (!existing && devCount >= (licByKey.devices_limit || 1)) {
+      res.status(400).json({ error: `تم استنفاد الحد الأقصى للأجهزة المرخصة لهذا الكود (${devCount}/${licByKey.devices_limit}). يرجى ترقية عدد الأجهزة مع المطور.` });
+      return;
+    }
+
     if (existing) {
       db.prepare("UPDATE license_devices SET status='authorized', last_active=datetime('now', 'localtime') WHERE id=?").run(existing.id);
     } else {
       db.prepare(`
         INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
-        VALUES (?, ?, ?, 'مفتاح ترخيص مباشر', 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
-      `).run(licByKey.id, currentDev, device_name || `جهاز (${os.hostname()})`);
+        VALUES (?, ?, ?, 'تفعيل مباشر بكود الترخيص', 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
+      `).run(licByKey.id, currentDev, device_name || `جهاز مفعل (${os.hostname()})`);
     }
+
     res.json({
       success: true,
-      message: "تم تفعيل الجهاز بنجاح باستخدام مفتاح الترخيص!",
+      message: `تم تفعيل وترخيص هذا الجهاز بنجاح حتى تاريخ (${licByKey.expires_at})! يمكنك الآن تسجيل الدخول للنظام.`,
       deviceId: currentDev,
-      expiresAt: licByKey.expires_at
+      clientName: licByKey.client_name,
+      expiresAt: licByKey.expires_at,
+      devicesLimit: licByKey.devices_limit
+    });
+    return;
+  }
+
+  // 2. Cryptographic Offline Verification (allows activation anywhere even without pre-saved DB)
+  const exp = expires_at || "2027-12-31";
+  const ver = target_version || CURRENT_SYSTEM_VERSION;
+  
+  // Try with limits 1, 2, 3, 5, 10, 50, 999
+  const limitsToTest = [1, 2, 3, 5, 10, 20, 50, 100, 999];
+  let verified = false;
+  let matchedLimit = 1;
+
+  for (const lim of limitsToTest) {
+    if (verifyActivationCode(rawCode, currentDev, exp, ver, lim) ||
+        verifyActivationCode(rawCode, currentDev, exp, "*", lim) ||
+        verifyActivationCode(rawCode, currentDev, "2027-12-31", CURRENT_SYSTEM_VERSION, lim)) {
+      verified = true;
+      matchedLimit = lim;
+      break;
+    }
+  }
+
+  // Also check wildcard device
+  if (!verified) {
+    for (const lim of limitsToTest) {
+      if (verifyActivationCode(rawCode, "*", exp, ver, lim)) {
+        verified = true;
+        matchedLimit = lim;
+        break;
+      }
+    }
+  }
+
+  if (verified) {
+    let lic = db.prepare("SELECT * FROM licenses WHERE active=1 ORDER BY id DESC LIMIT 1").get() as any;
+    if (!lic) {
+      const r = db.prepare(`
+        INSERT INTO licenses (license_key, client_name, devices_limit, expires_at, active, status, target_version, license_type)
+        VALUES (?, ?, ?, ?, 1, 'active', ?, 'desktop')
+      `).run(rawCode, client_name || "عميل مرخص", matchedLimit, exp, ver);
+      lic = db.prepare("SELECT * FROM licenses WHERE id=?").get(r.lastInsertRowid);
+    } else {
+      db.prepare("UPDATE licenses SET expires_at=?, target_version=?, active=1, status='active', devices_limit=? WHERE id=?").run(exp, ver, matchedLimit, lic.id);
+    }
+
+    // Register device
+    const existing = db.prepare("SELECT * FROM license_devices WHERE license_id=? AND device_id=?").get(lic.id, currentDev) as any;
+    if (existing) {
+      db.prepare("UPDATE license_devices SET status='authorized', authorized_by='كود تفعيل رقمي مشفر', last_active=datetime('now', 'localtime') WHERE id=?").run(existing.id);
+    } else {
+      db.prepare(`
+        INSERT INTO license_devices (license_id, device_id, device_name, authorized_by, status, last_active, registered_at)
+        VALUES (?, ?, ?, 'كود تفعيل رقمي مشفر', 'authorized', datetime('now', 'localtime'), datetime('now', 'localtime'))
+      `).run(lic.id, currentDev, device_name || `جهاز مفعل (${os.hostname()})`);
+    }
+
+    res.json({
+      success: true,
+      message: `تم تفعيل وترخيص هذا الجهاز بنجاح حتى تاريخ (${exp})! يمكنك الآن تسجيل الدخول للنظام.`,
+      deviceId: currentDev,
+      clientName: client_name || lic.client_name,
+      expiresAt: exp,
+      devicesLimit: matchedLimit
     });
     return;
   }
 
   res.status(400).json({
-    error: "كود التفعيل أو مفتاح الترخيص غير صالح لهذه البصمة. يرجى التأكد من الكود الممنوح من المطور."
+    error: "كود الترخيص المدخل غير مطابق لبصمة هذا الجهاز أو منتهي الصلاحية. يرجى مراجعة إدارة النظام للحصول على الكود الصحيح."
   });
 });
 

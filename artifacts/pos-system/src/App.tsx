@@ -477,12 +477,15 @@ function Router() {
   );
 }
 
+import { LicenseExpiryBanner } from "@/components/LicenseExpiryBanner";
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={((import.meta as any).env?.BASE_URL || "").replace(/\/$/, "")}>
           <AuthProvider>
+            <LicenseExpiryBanner />
             <Router />
           </AuthProvider>
         </WouterRouter>

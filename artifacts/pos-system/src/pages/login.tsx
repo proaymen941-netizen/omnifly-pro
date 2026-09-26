@@ -649,7 +649,22 @@ export default function Login() {
             </Card>
           )}
 
-          <div className="mt-6 flex flex-col items-center gap-2">
+          <div className="mt-5 flex flex-col items-center gap-2.5 w-full">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setLicenseModalTitle("تفعيل وترخيص هذا الجهاز");
+                setLicenseModalMessage("أدخل كود التفعيل الممنوح لك من إدارة ومطور النظام لتفعيل وترخيص هذا الجهاز.");
+                setLicenseModalType("generic");
+                setShowLicenseModal(true);
+              }}
+              className="w-full border-2 border-amber-500/40 bg-amber-50/80 hover:bg-amber-100 text-amber-950 font-black text-xs py-2 shadow-xs flex items-center justify-center gap-1.5 rounded-xl"
+            >
+              <Key className="w-3.5 h-3.5 text-amber-600" />
+              <span>تفعيل ترخيص الجهاز / إدخال كود الترخيص</span>
+            </Button>
+
             {deviceInfo?.deviceId && (
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-bold shadow-xs">
                 <Fingerprint className="w-3.5 h-3.5 text-amber-700" />

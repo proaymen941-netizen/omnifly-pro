@@ -11,7 +11,7 @@ import { AppLogo } from "@/components/AppLogo";
 import { 
   KeyRound, Plus, Trash2, ShieldCheck, Monitor, Lock, AlertTriangle, 
   Laptop, Palette, Upload, RefreshCw, Fingerprint, Copy, Check, 
-  Sparkles, CheckCircle2, ShieldAlert, Cpu, ArrowUpRight, Cloud, Globe, Server, Zap
+  Sparkles, CheckCircle2, ShieldAlert, Cpu, ArrowUpRight, Cloud, Globe, Server, Zap, MessageSquare
 } from "lucide-react";
 
 function fetchAuth(url: string, opts: RequestInit = {}) {
@@ -47,10 +47,16 @@ export default function LicensesPage() {
 
   // Code generator state
   const [genDeviceId, setGenDeviceId] = useState("");
+  const [genClientName, setGenClientName] = useState("شركة أومني لسفريات والسياحة");
   const [genExpiresAt, setGenExpiresAt] = useState("2027-12-31");
+  const [genDevicesLimit, setGenDevicesLimit] = useState("1");
+  const [genLicenseType, setGenLicenseType] = useState<"desktop" | "cloud">("desktop");
+  const [genNotes, setGenNotes] = useState("");
   const [genVersion, setGenVersion] = useState("1.1.0");
   const [generatedCode, setGeneratedCode] = useState("");
+  const [generatedShareText, setGeneratedShareText] = useState("");
   const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedShareText, setCopiedShareText] = useState(false);
 
   // Logo upload state
   const devLogoFileRef = useRef<HTMLInputElement>(null);
@@ -137,13 +143,21 @@ export default function LicensesPage() {
 
   const generateCodeMut = useMutation({
     mutationFn: () => apiPost("/api/licenses/generate-code", { 
-      device_id: genDeviceId, 
+      device_id: genDeviceId,
+      client_name: genClientName,
       expires_at: genExpiresAt, 
-      target_version: genVersion 
+      devices_limit: Number(genDevicesLimit),
+      license_type: genLicenseType,
+      target_version: genVersion,
+      notes: genNotes,
+      auto_save: true
     }),
     onSuccess: (data) => {
       setGeneratedCode(data.activationCode);
-      toast({ title: "تم توليد كود التفعيل الرقمي بنجاح 🔑" });
+      setGeneratedShareText(data.shareText || "");
+      qc.invalidateQueries({ queryKey: ["licenses"] });
+      qc.invalidateQueries({ queryKey: ["license-status"] });
+      toast({ title: "تم توليد واعتماد كود الترخيص بنجاح 🔑✅", description: `صالح حتى ${data.expiresAt}` });
     },
     onError: (e: any) => toast({ variant: "destructive", title: "فشل التوليد", description: e.message })
   });
@@ -530,87 +544,237 @@ export default function LicensesPage() {
           </Card>
         </div>
 
-        {/* ── SECTION 2: Instant Offline Activation Code Generator ── */}
-        <Card className="border-2 border-amber-500/30 bg-gradient-to-br from-amber-50/50 via-white to-orange-50/40 rounded-2xl shadow-md">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
+        {/* ── SECTION 2: Instant Cloud & Offline Activation Code Generator ── */}
+        <Card className="border-2 border-amber-500/40 bg-gradient-to-br from-amber-50/60 via-white to-orange-50/50 rounded-2xl shadow-lg overflow-hidden">
+          <CardHeader className="pb-3 border-b border-amber-200/60 bg-amber-100/40">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <CardTitle className="text-base font-black text-amber-950 flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-amber-600" />
-                <span>مولد أكواد التفعيل الرقمية الفورية (Offline Activation Generator)</span>
+                <span>مولد ومصدر أكواد التراخيص السحابية والمكتبية (Cloud & Device License Generator)</span>
               </CardTitle>
-              <Badge variant="outline" className="border-amber-600 text-amber-800 bg-amber-100 font-bold text-xs">
-                تشفير آمن HMAC-SHA256 🔑
+              <Badge variant="outline" className="border-amber-600 text-amber-900 bg-amber-200/80 font-bold text-xs px-3 py-1">
+                تشفير رقمي آمن HMAC-SHA256 🔑
               </Badge>
             </div>
-            <CardDescription className="text-amber-900/80 text-xs font-medium">
-              أدخل بصمة جهاز العميل أدناه لتوليد كود تفعيل رقمي معتمد ومحمي، يمكنك إرساله للعميل لتفعيل النظام في جهازه مباشرة دون الحاجة لربطه بالإنترنت.
+            <CardDescription className="text-amber-900/90 text-xs font-medium">
+              أدخل بصمة جهاز العميل (HWID) وحدد وقت الترخيص وعدد الأجهزة المسموح بها لتوليد كود ترخيص رقمي معتمد ومسجل، يمكنك إرساله للعميل لتفعيل النظام مباشرة.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          <CardContent className="p-5 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
+              {/* Target Device HWID */}
               <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 mb-1">بصمة جهاز العميل (HWID) *</label>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  بصمة جهاز العميل المستهدف (Target HWID) *
+                </label>
                 <div className="flex items-center gap-2">
                   <Input
                     value={genDeviceId}
                     onChange={(e) => setGenDeviceId(e.target.value)}
                     placeholder="مثال: HW-9C3E-A1B2-7F89"
-                    className="font-mono text-xs font-bold bg-white text-right"
+                    className="font-mono text-xs font-bold bg-white text-right border-slate-300 focus:border-amber-500"
                   />
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={() => setGenDeviceId(currentDevId)}
-                    className="text-xs shrink-0 font-bold border-amber-300 hover:bg-amber-100 text-amber-900"
+                    className="text-xs shrink-0 font-bold border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-950 shadow-xs"
                   >
                     لصق بصمة هذا الجهاز
                   </Button>
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">تاريخ الانتهاء المعتمد</label>
+
+              {/* Client Name */}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  اسم المنشأة / العميل المرخص له *
+                </label>
+                <Input
+                  value={genClientName}
+                  onChange={(e) => setGenClientName(e.target.value)}
+                  placeholder="شركة أومني لسفريات والسياحة"
+                  className="text-xs font-bold bg-white border-slate-300 focus:border-amber-500"
+                />
+              </div>
+
+              {/* License Duration Presets */}
+              <div className="sm:col-span-2 space-y-1.5">
+                <label className="block text-xs font-bold text-slate-800">
+                  تحديد مدة الصلاحية وتاريخ الانتهاء
+                </label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    { label: "شهر (30 يوم)", days: 30 },
+                    { label: "3 أشهر", days: 90 },
+                    { label: "6 أشهر", days: 180 },
+                    { label: "سنة (12 شهر)", days: 365 },
+                    { label: "سنتين", days: 730 },
+                    { label: "حتى 2030", custom: "2030-12-31" }
+                  ].map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        if (preset.custom) {
+                          setGenExpiresAt(preset.custom);
+                        } else if (preset.days) {
+                          const d = new Date();
+                          d.setDate(d.getDate() + preset.days);
+                          setGenExpiresAt(d.toISOString().split("T")[0]);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white hover:bg-amber-100 border border-amber-300 text-slate-800 transition-colors shadow-2xs"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
                 <Input
                   type="date"
                   value={genExpiresAt}
                   onChange={(e) => setGenExpiresAt(e.target.value)}
-                  className="text-xs font-bold bg-white"
+                  className="text-xs font-bold bg-white border-slate-300 mt-1"
                 />
               </div>
-              <div className="flex items-end">
-                <Button
-                  type="button"
-                  onClick={() => generateCodeMut.mutate()}
-                  disabled={!genDeviceId.trim() || generateCodeMut.isPending}
-                  className="w-full bg-amber-600 hover:bg-amber-700 text-white font-black text-xs h-9 shadow-md gap-1.5"
+
+              {/* Devices Limit */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  عدد الأجهزة المسموح بها لهذه البصمة
+                </label>
+                <select
+                  value={genDevicesLimit}
+                  onChange={(e) => setGenDevicesLimit(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-bold text-slate-900 shadow-xs focus:ring-1 focus:ring-amber-500"
                 >
-                  <KeyRound className="w-4 h-4" />
-                  <span>{generateCodeMut.isPending ? "جاري التوليد..." : "توليد كود التفعيل"}</span>
-                </Button>
+                  <option value="1">جهاز واحد فقط (Single PC)</option>
+                  <option value="2">جهازين (2 PCs)</option>
+                  <option value="3">3 أجهزة (3 PCs)</option>
+                  <option value="5">5 أجهزة (5 PCs)</option>
+                  <option value="10">10 أجهزة (10 PCs)</option>
+                  <option value="20">20 جهاز (20 PCs)</option>
+                  <option value="50">50 جهاز (50 PCs)</option>
+                  <option value="999">سحابي مفتوح بدون قيود (Unlimited)</option>
+                </select>
+              </div>
+
+              {/* License Type */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  نوع الترخيص
+                </label>
+                <select
+                  value={genLicenseType}
+                  onChange={(e: any) => setGenLicenseType(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-bold text-slate-900 shadow-xs focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="desktop">💻 ترخيص محلي مقيد بالأجهزة (Desktop HWID)</option>
+                  <option value="cloud">☁️ ترخيص سحابي شامل (Cloud Instance)</option>
+                </select>
               </div>
             </div>
 
+            {/* Notes & Generate Button */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <div className="w-full sm:flex-1">
+                <Input
+                  value={genNotes}
+                  onChange={(e) => setGenNotes(e.target.value)}
+                  placeholder="ملاحظات الترخيص (اختياري: مثلاً فرع الرياض، عقد سنوي رقم #204...)"
+                  className="text-xs bg-white border-slate-300"
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={() => generateCodeMut.mutate()}
+                disabled={!genDeviceId.trim() || generateCodeMut.isPending}
+                className="w-full sm:w-auto bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs h-9 px-6 shadow-md gap-2 shrink-0"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>{generateCodeMut.isPending ? "جاري التوليد والاعتماد..." : "توليد واعتماد كود الترخيص"}</span>
+              </Button>
+            </div>
+
+            {/* Result Box */}
             {generatedCode && (
-              <div className="p-4 rounded-xl bg-slate-900 text-white border-2 border-amber-500 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in-50">
-                <div className="space-y-1">
-                  <span className="text-xs text-amber-400 font-bold">كود التفعيل الرقمي المولد للجهاز ({genDeviceId}):</span>
-                  <div className="font-mono text-xl sm:text-2xl font-black text-white tracking-widest dir-ltr">
-                    {generatedCode}
+              <div className="p-5 rounded-2xl bg-slate-950 text-white border-2 border-amber-500 space-y-4 shadow-xl animate-in fade-in-50">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div className="space-y-1">
+                    <span className="text-xs text-amber-400 font-bold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      كود الترخيص الرقمي المعتمد للبصمة ({genDeviceId}):
+                    </span>
+                    <div className="font-mono text-xl sm:text-2xl font-black text-white tracking-widest dir-ltr">
+                      {generatedCode}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedCode);
+                        setCopiedCode(true);
+                        toast({ title: "تم نسخ كود التفعيل 📋", description: generatedCode });
+                        setTimeout(() => setCopiedCode(false), 3000);
+                      }}
+                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 py-2 gap-1.5 shadow-md"
+                    >
+                      {copiedCode ? <Check className="w-4 h-4 text-emerald-950" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedCode ? "تم النسخ!" : "نسخ الكود فقط"}</span>
+                    </Button>
+
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const text = generatedShareText || `كود تفعيل نظام OmniFly Pro للبصمة (${genDeviceId}):\n${generatedCode}\nصالح حتى: ${genExpiresAt}`;
+                        navigator.clipboard.writeText(text);
+                        setCopiedShareText(true);
+                        toast({ title: "تم نسخ بيانات الترخيص كاملة 📋" });
+                        setTimeout(() => setCopiedShareText(false), 3000);
+                      }}
+                      variant="outline"
+                      className="border-slate-700 bg-slate-900 text-white hover:bg-slate-800 font-bold text-xs px-4 py-2 gap-1.5"
+                    >
+                      {copiedShareText ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
+                      <span>نسخ رسالة التفعيل للعميل</span>
+                    </Button>
+
+                    {generatedShareText && (
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(generatedShareText)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-4 py-2 rounded-md shadow-md transition-colors"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                        <span>إرسال عبر واتساب</span>
+                      </a>
+                    )}
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(generatedCode);
-                    setCopiedCode(true);
-                    toast({ title: "تم نسخ كود التفعيل 📋", description: generatedCode });
-                    setTimeout(() => setCopiedCode(false), 3000);
-                  }}
-                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-5 py-2.5 gap-1.5 shrink-0 shadow-lg"
-                >
-                  {copiedCode ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  <span>{copiedCode ? "تم النسخ!" : "نسخ الكود لإرساله للعميل"}</span>
-                </Button>
+
+                {/* Detailed Summary */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-slate-900/90 p-3 rounded-xl border border-slate-800 font-bold">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">المنشأة:</span>
+                    <span className="text-white">{genClientName}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">صالح حتى:</span>
+                    <span className="text-amber-300 font-mono">{genExpiresAt}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">عدد الأجهزة:</span>
+                    <span className="text-emerald-400">{genDevicesLimit} أجهزة</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">نوع الترخيص:</span>
+                    <span className="text-blue-300">{genLicenseType === "cloud" ? "سحابي شامل" : "أجهزة مكتبية"}</span>
+                  </div>
+                </div>
               </div>
             )}
           </CardContent>

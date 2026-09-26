@@ -47,6 +47,8 @@ export interface LicenseStatusResult {
   clientName?: string;
   expiresAt?: string;
   remainingDays?: number;
+  isWarning?: boolean;
+  warningMessage?: string;
   targetVersion?: string;
   currentVersion?: string;
   devicesLimit?: number;
@@ -119,6 +121,11 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
 
     const activeDevicesCount = (db.prepare("SELECT COUNT(*) as c FROM license_devices WHERE license_id=? AND (status IS NULL OR status='authorized' OR status='active')").get(lic.id) as { c: number })?.c || 1;
 
+    const isWarning = diffDays <= 15 && diffDays > 0;
+    const warningMessage = isWarning
+      ? `تنبيه: متبقي ${diffDays} يوم فقط على انتهاء ترخيص هذا الجهاز (${lic.expires_at}). يرجى سرعة التواصل مع إدارة ومطور النظام لتجديد الترخيص قبل موعد التوقف.`
+      : undefined;
+
     // CLOUD LICENSE SUPPORT:
     // If license is a Cloud License (or by default in web deployments), all users accessing this cloud instance are authorized under the cloud master license
     const isCloudLicense = !lic.license_type || lic.license_type === "cloud" || lic.license_type === "سحابي";
@@ -130,6 +137,8 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
         clientName: lic.client_name,
         expiresAt: lic.expires_at,
         remainingDays: diffDays,
+        isWarning,
+        warningMessage,
         targetVersion: lic.target_version || CURRENT_SYSTEM_VERSION,
         currentVersion: CURRENT_SYSTEM_VERSION,
         devicesLimit: lic.devices_limit || 999,
@@ -148,6 +157,7 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
         licenseType: "desktop",
         clientName: lic.client_name,
         expiresAt: lic.expires_at,
+        remainingDays: diffDays,
         currentVersion: CURRENT_SYSTEM_VERSION,
         reason: `هذا الجهاز (بصمة الجهاز: ${currentDevice}) غير مرخص له بتشغيل النظام. يُمنع منعاً باتاً تشغيل النظام عند نسخ ملفاته إلى جهاز آخر بدون ترخيص معتمد من المطور.`
       };
@@ -161,6 +171,7 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
         licenseType: "desktop",
         clientName: lic.client_name,
         expiresAt: lic.expires_at,
+        remainingDays: diffDays,
         currentVersion: CURRENT_SYSTEM_VERSION,
         reason: `تم حظر هذا الجهاز (${currentDevice}) من قِبل المطور. يرجى التواصل مع المطور لفك الحظر.`
       };
@@ -178,6 +189,8 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
       clientName: lic.client_name,
       expiresAt: lic.expires_at,
       remainingDays: diffDays,
+      isWarning,
+      warningMessage,
       targetVersion: lic.target_version || CURRENT_SYSTEM_VERSION,
       currentVersion: CURRENT_SYSTEM_VERSION,
       devicesLimit: lic.devices_limit,
