@@ -70,6 +70,10 @@ export default function Login() {
   const [isActivatingCode, setIsActivatingCode] = useState(false);
   const [copiedHwid, setCopiedHwid] = useState(false);
 
+  // Success Celebration Modal State
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [activationSuccessData, setActivationSuccessData] = useState<any>(null);
+
   const [promoIndex, setPromoIndex] = useState(0);
   const promoSlides = [
     {
@@ -122,12 +126,18 @@ export default function Login() {
       if (!res.ok) {
         throw new Error(data.error || "فشل التفعيل بكود الترخيص");
       }
+
+      setActivationSuccessData(data);
+      setShowLicenseModal(false);
+      setShowSuccessModal(true);
+      setUsername("admin");
+      setPassword("admin123");
+      setActivationCodeInput("");
+
       toast({
-        title: "تم تفعيل الجهاز بنجاح! ✅",
+        title: "تم تفعيل الجهاز بنجاح! 🎉✅",
         description: data.message || "تم اعتماد هذا الجهاز بنجاح. يمكنك الآن تسجيل الدخول."
       });
-      setShowLicenseModal(false);
-      setActivationCodeInput("");
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -816,6 +826,106 @@ export default function Login() {
                 className="border-slate-300 text-slate-700 font-extrabold px-5 py-2 rounded-xl text-xs"
               >
                 إغلاق التنبيه
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── CELEBRATION SUCCESS MODAL ON LICENSE ACTIVATION ── */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4 font-sans" dir="rtl">
+          <div className="bg-white rounded-3xl border-4 border-emerald-500 shadow-2xl max-w-lg w-full overflow-hidden transform animate-in fade-in-50 zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-slate-900 text-white p-6 flex items-center gap-4 text-right">
+              <div className="p-3 bg-white/20 rounded-2xl shadow-inner animate-bounce">
+                <ShieldCheck className="w-10 h-10 text-yellow-300" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black">ألف مبروك! تم ترخيص وتفعيل النظام بنجاح 🎉✅</h3>
+                <p className="text-xs text-white/90 font-bold mt-0.5">نظام إدارة السفريات والسياحة الشامل (OmniFly Pro)</p>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4 text-right">
+              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-600">
+                  <span>المنشأة المرخص لها:</span>
+                  <span className="font-black text-slate-900 text-sm">{activationSuccessData?.clientName || "شركة أومني لسفريات والسياحة"}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs font-bold text-slate-600 border-t border-emerald-100 pt-1.5">
+                  <span>تاريخ انتهاء الصلاحية:</span>
+                  <span className="font-mono font-black text-emerald-800">{activationSuccessData?.expiresAt || "2027-12-31"}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs font-bold text-slate-600 border-t border-emerald-100 pt-1.5">
+                  <span>عدد الأجهزة المعتمدة:</span>
+                  <span className="font-black text-emerald-800">{activationSuccessData?.devicesLimit || 1} أجهزة</span>
+                </div>
+                <div className="flex items-center justify-between text-xs font-bold text-slate-600 border-t border-emerald-100 pt-1.5">
+                  <span>بصمة هذا الجهاز:</span>
+                  <span className="font-mono text-[11px] font-black text-slate-700 dir-ltr">{activationSuccessData?.deviceId || deviceInfo?.deviceId}</span>
+                </div>
+              </div>
+
+              {/* Login Credentials Guide */}
+              <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 space-y-3">
+                <div className="flex items-center gap-2 text-yellow-400 font-black text-xs">
+                  <Key className="w-4 h-4" />
+                  <span>بيانات تسجيل الدخول الافتراضية للنظام:</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
+                  <div>
+                    <span className="text-[11px] text-slate-400 block mb-0.5">اسم المستخدم</span>
+                    <span className="font-mono text-sm font-black text-yellow-300">admin</span>
+                  </div>
+                  <div className="border-r border-slate-800">
+                    <span className="text-[11px] text-slate-400 block mb-0.5">كلمة السر</span>
+                    <span className="font-mono text-sm font-black text-yellow-300">admin123</span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  تمت تعبئة بيانات الدخول في النموذج تلقائياً، يمكنك الآن النقر على الزر أدناه للدخول إلى لوحة التحكم فوراً.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 px-6 py-4 flex items-center justify-between gap-3 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowSuccessModal(false)}
+                className="text-xs font-bold"
+              >
+                إغلاق
+              </Button>
+
+              <Button
+                type="button"
+                onClick={(e) => {
+                  setShowSuccessModal(false);
+                  setUsername("admin");
+                  setPassword("admin123");
+                  loginMutation.mutate(
+                    { data: { username: "admin", password: "admin123" } },
+                    {
+                      onSuccess: (data) => {
+                        login(data.token, data.user);
+                        toast({
+                          title: "تم تسجيل الدخول بنجاح",
+                          description: `أهلاً بك ${data.user?.name || data.user?.username || ""}`,
+                        });
+                        setLocation("/travel-dashboard");
+                      }
+                    }
+                  );
+                }}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm h-11 px-6 rounded-xl shadow-lg gap-2"
+              >
+                <Sparkles className="w-4 h-4 text-yellow-300" />
+                <span>تسجيل الدخول للنظام الآن 🚀</span>
               </Button>
             </div>
           </div>
