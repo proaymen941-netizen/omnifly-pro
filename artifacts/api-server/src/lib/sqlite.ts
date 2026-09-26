@@ -269,6 +269,10 @@ try {
 }
 
 export const db = dbInstance;
+export const activeDatabasePath = dbPath;
+export function getActiveDatabasePath(): string {
+  return dbPath;
+}
 
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");

@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import multer from "multer";
 import { getAuthUser } from "./auth";
-import { db } from "../lib/sqlite";
+import { db, getActiveDatabasePath } from "../lib/sqlite";
 
 const router = Router();
 const upload = multer({ dest: os.tmpdir() });
@@ -53,9 +53,7 @@ export function performBackup(reason: string = "manual"): { success: boolean; pa
   const backupFileName = `${prefix}_${timestamp}.db`;
   const backupFilePath = path.join(dir, backupFileName);
 
-  const dbPath = path.resolve(process.cwd(), "artifacts/api-server/data/pos.db");
-  const fallbackDbPath = path.resolve(process.cwd(), "data/pos.db");
-  const actualDbPath = fs.existsSync(dbPath) ? dbPath : fallbackDbPath;
+  const actualDbPath = getActiveDatabasePath();
 
   if (!fs.existsSync(actualDbPath)) {
     throw new Error(`قاعدة البيانات غير موجودة في المسار: ${actualDbPath}`);
@@ -215,11 +213,15 @@ router.delete("/system/backup/:filename", (req, res) => {
 router.get("/system/backup/settings", (req, res) => {
   if (!requireDeveloper(req, res)) return;
   try {
+    const activePath = getActiveDatabasePath();
+    const stat = fs.existsSync(activePath) ? fs.statSync(activePath) : null;
     res.json({
       autoBackupEnabled,
       autoBackupIntervalMinutes,
       maxRetainedBackups,
       backupDir: getBackupDir(),
+      activeDbPath: activePath,
+      dbSize: stat ? stat.size : 0,
       lastAutoBackupTime: lastAutoBackupTime ? lastAutoBackupTime.toISOString() : null,
     });
   } catch (e: any) {
@@ -290,9 +292,7 @@ router.post("/system/restore", upload.single("dbFile"), (req, res) => {
       return res.status(400).json({ error: "لم يتم رفع ملف قاعدة البيانات" });
     }
 
-    const dbPath = path.resolve(process.cwd(), "artifacts/api-server/data/pos.db");
-    const fallbackDbPath = path.resolve(process.cwd(), "data/pos.db");
-    const actualDbPath = fs.existsSync(dbPath) ? dbPath : fallbackDbPath;
+    const actualDbPath = getActiveDatabasePath();
 
     // 1. Close database to unlock file on the system (critical for Windows/Linux)
     try {
@@ -354,9 +354,7 @@ router.post("/system/restore-local", (req, res) => {
       return res.status(404).json({ error: "ملف النسخة الاحتياطية غير موجود على الجهاز" });
     }
 
-    const dbPath = path.resolve(process.cwd(), "artifacts/api-server/data/pos.db");
-    const fallbackDbPath = path.resolve(process.cwd(), "data/pos.db");
-    const actualDbPath = fs.existsSync(dbPath) ? dbPath : fallbackDbPath;
+    const actualDbPath = getActiveDatabasePath();
 
     // 1. Close database to unlock file on the system
     try {
