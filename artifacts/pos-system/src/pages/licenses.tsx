@@ -567,13 +567,32 @@ export default function LicensesPage() {
                 <label className="block text-xs font-bold text-slate-800 mb-1">
                   بصمة جهاز العميل المستهدف (Target HWID) *
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
                   <Input
                     value={genDeviceId}
                     onChange={(e) => setGenDeviceId(e.target.value)}
-                    placeholder="مثال: HW-9C3E-A1B2-7F89"
+                    placeholder="مثال: HW-3789-3288-C91A"
                     className="font-mono text-xs font-bold bg-white text-right border-slate-300 focus:border-amber-500"
                   />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText();
+                        if (text && text.trim()) {
+                          setGenDeviceId(text.trim().toUpperCase());
+                          toast({ title: "تم لصق بصمة الجهاز من الحافظة 📋", description: text.trim().toUpperCase() });
+                        }
+                      } catch {
+                        toast({ variant: "destructive", title: "تعذر القراءة التلقائية", description: "استخدم Ctrl+V للصق البصمة في الحقل" });
+                      }
+                    }}
+                    className="text-xs shrink-0 font-bold border-slate-300 bg-white hover:bg-slate-100 text-slate-800 shadow-xs"
+                  >
+                    لصق البصمة 📋
+                  </Button>
                   <Button
                     type="button"
                     variant="outline"
@@ -581,7 +600,7 @@ export default function LicensesPage() {
                     onClick={() => setGenDeviceId(currentDevId)}
                     className="text-xs shrink-0 font-bold border-amber-400 bg-amber-50 hover:bg-amber-100 text-amber-950 shadow-xs"
                   >
-                    لصق بصمة هذا الجهاز
+                    بصمة هذا الجهاز
                   </Button>
                 </div>
               </div>

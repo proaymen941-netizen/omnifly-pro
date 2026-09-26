@@ -90,7 +90,7 @@ export function checkLicenseStatus(deviceId?: string): LicenseStatusResult {
     const diffTime = expireDate.getTime() - currentDate.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffDays <= 0) {
+    if (diffDays < 0) {
       return { 
         blocked: true, 
         code: "license_expired",

@@ -69,6 +69,32 @@ export default function Login() {
   const [activationCodeInput, setActivationCodeInput] = useState("");
   const [isActivatingCode, setIsActivatingCode] = useState(false);
   const [copiedHwid, setCopiedHwid] = useState(false);
+  const [inspectedCodeInfo, setInspectedCodeInfo] = useState<any>(null);
+
+  useEffect(() => {
+    const code = activationCodeInput.trim();
+    if (!code || code.length < 8) {
+      setInspectedCodeInfo(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetch("/api/licenses/inspect-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activation_code: code,
+          device_id: deviceInfo?.deviceId
+        })
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d && d.valid) setInspectedCodeInfo(d);
+          else setInspectedCodeInfo(null);
+        })
+        .catch(() => setInspectedCodeInfo(null));
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [activationCodeInput, deviceInfo?.deviceId]);
 
   // Success Celebration Modal State
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -765,16 +791,35 @@ export default function Login() {
 
               {/* Instant Activation with Code Form */}
               <form onSubmit={handleActivateWithCode} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 text-right">
-                <label className="block text-xs font-black text-slate-800 flex items-center gap-1.5">
-                  <Key className="w-4 h-4 text-red-600" />
-                  <span>تفعيل فوري بكود التفعيل الرقمي (Activation Code)</span>
-                </label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Key className="w-4 h-4 text-red-600" />
+                    <span>تفعيل فوري بكود الترخيص الرقمي المشفر (Encrypted Activation Code)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText();
+                        if (text && text.trim()) {
+                          setActivationCodeInput(text.trim());
+                          toast({ title: "تم لصق كود التفعيل 📋" });
+                        }
+                      } catch {
+                        toast({ variant: "destructive", title: "استخدم Ctrl+V للصق الكود" });
+                      }
+                    }}
+                    className="text-[11px] font-bold bg-amber-100 hover:bg-amber-200 text-amber-950 px-2.5 py-1 rounded-lg border border-amber-300 transition-colors"
+                  >
+                    لصق الكود 📋
+                  </button>
+                </div>
                 <div className="flex items-center gap-2">
                   <Input
                     type="text"
                     value={activationCodeInput}
                     onChange={(e) => setActivationCodeInput(e.target.value)}
-                    placeholder="ACT-XXXX-XXXX-XXXX أو مفتاح الترخيص"
+                    placeholder="ألصق كود الترخيص الرقمي المشفر هنا (OMNI-LIC... أو ACT-...)"
                     className="font-mono text-center text-xs h-9 bg-white border-slate-300 font-black tracking-wider text-slate-900"
                   />
                   <Button
@@ -785,6 +830,27 @@ export default function Login() {
                     {isActivatingCode ? <Loader2 className="w-4 h-4 animate-spin" /> : "اعتماد وتفعيل"}
                   </Button>
                 </div>
+
+                {inspectedCodeInfo && (
+                  <div className={`p-3 rounded-xl border text-xs space-y-1.5 animate-in fade-in duration-200 ${
+                    inspectedCodeInfo.isDeviceMatch && !inspectedCodeInfo.isExpired
+                      ? "bg-emerald-50 border-emerald-300 text-emerald-950"
+                      : "bg-red-50 border-red-300 text-red-950"
+                  }`}>
+                    <div className="font-black flex items-center justify-between border-b border-current/15 pb-1">
+                      <span>🔓 تم فك تشفير كود الترخيص الرقمي بنجاح:</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold">
+                        {inspectedCodeInfo.isDeviceMatch ? "مطابق لبصمة جهازك ✅" : "بصمة مختلفة ⚠️"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 pt-1 text-[11px] font-bold">
+                      <div>العميل المرخص له: <span className="font-black">{inspectedCodeInfo.clientName}</span></div>
+                      <div>تاريخ الانتهاء: <span className="font-mono font-black">{inspectedCodeInfo.expiresAt}</span></div>
+                      <div>عدد الأجهزة المسموحة: <span className="font-black">{inspectedCodeInfo.devicesLimit} جهاز</span></div>
+                      <div>البصمة المضمنة: <span className="font-mono font-black dir-ltr">{inspectedCodeInfo.hwid}</span></div>
+                    </div>
+                  </div>
+                )}
               </form>
 
               {/* Developer Contact Card */}

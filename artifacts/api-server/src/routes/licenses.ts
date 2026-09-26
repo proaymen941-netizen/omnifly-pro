@@ -550,7 +550,13 @@ function applyActivatedLicenseToDatabase(params: {
       SET license_key=?, client_name=?, devices_limit=?, expires_at=?, target_version=?, license_type=?, notes=?, active=1, status='active'
       WHERE id=?
     `).run(rawCode, clientName, devicesLimit, expiresAt, effectiveVersion, licenseType, notes || lic.notes || "تم التفعيل بكود الترخيص الرقمي المشفر", lic.id);
+    lic = db.prepare("SELECT * FROM licenses WHERE id=?").get(lic.id);
   }
+
+  // Deactivate any older duplicate rows so checkLicenseStatus always picks this activated license
+  try {
+    db.prepare("UPDATE licenses SET active=0 WHERE id != ?").run(lic.id);
+  } catch (e) {}
 
   // Update businessName in settings table so Login screen & Header display the licensed client name
   try {
@@ -585,6 +591,89 @@ function applyActivatedLicenseToDatabase(params: {
 
   return lic;
 }
+
+// Public endpoint: Decrypt and inspect an activation code before/during activation
+router.post("/licenses/inspect-code", (req, res) => {
+  const { activation_code, device_id } = req.body;
+  const sysDev = getSystemDeviceId().trim().toUpperCase();
+  const currentDev = (device_id ? String(device_id).trim().toUpperCase() : sysDev) || sysDev;
+
+  if (!activation_code || !String(activation_code).trim()) {
+    res.json({ valid: false });
+    return;
+  }
+
+  const rawCode = String(activation_code).trim().replace(/[\r\n\t\s]+/g, "");
+  const decrypted = decryptLicenseToken(rawCode);
+  if (decrypted) {
+    const targetHwid = String(decrypted.hwid || "*").trim().toUpperCase();
+    const targetExp = String(decrypted.exp || "2027-12-31").trim();
+    const targetClient = String(decrypted.client || "شركة أومني لسفريات والسياحة").trim();
+    const targetLimit = Math.max(1, Number(decrypted.limit) || 1);
+    const targetType = decrypted.type === "cloud" ? "cloud" : "desktop";
+    const isDeviceMatch = targetType === "cloud" || targetHwid === "*" || targetHwid === currentDev || targetHwid === sysDev;
+    const expDateObj = new Date(`${targetExp}T23:59:59`);
+    const isExpired = !isNaN(expDateObj.getTime()) && expDateObj < new Date();
+
+    res.json({
+      valid: true,
+      encrypted: true,
+      hwid: targetHwid,
+      clientName: targetClient,
+      expiresAt: targetExp,
+      devicesLimit: targetLimit,
+      licenseType: targetType,
+      targetVersion: decrypted.ver || CURRENT_SYSTEM_VERSION,
+      notes: decrypted.notes || "",
+      isDeviceMatch,
+      isExpired,
+      currentDevice: currentDev
+    });
+    return;
+  }
+
+  const licByKey = db.prepare("SELECT * FROM licenses WHERE (license_key=? OR license_key=?) ORDER BY id DESC LIMIT 1").get(rawCode, rawCode.toUpperCase()) as any;
+  if (licByKey) {
+    const expDateObj = new Date(`${licByKey.expires_at}T23:59:59`);
+    const isExpired = !isNaN(expDateObj.getTime()) && expDateObj < new Date();
+    res.json({
+      valid: true,
+      encrypted: false,
+      hwid: currentDev,
+      clientName: licByKey.client_name,
+      expiresAt: licByKey.expires_at,
+      devicesLimit: licByKey.devices_limit || 1,
+      licenseType: licByKey.license_type || "desktop",
+      targetVersion: licByKey.target_version || CURRENT_SYSTEM_VERSION,
+      isDeviceMatch: true,
+      isExpired,
+      currentDevice: currentDev
+    });
+    return;
+  }
+
+  const hmacMatch = findLegacyHmacMatch(rawCode, [currentDev, sysDev, "HW-3789-3288-C91A", "*"]);
+  if (hmacMatch) {
+    const expDateObj = new Date(`${hmacMatch.exp}T23:59:59`);
+    const isExpired = !isNaN(expDateObj.getTime()) && expDateObj < new Date();
+    res.json({
+      valid: true,
+      encrypted: true,
+      hwid: hmacMatch.hwid,
+      clientName: "شركة أومني لسفريات والسياحة",
+      expiresAt: hmacMatch.exp,
+      devicesLimit: hmacMatch.limit,
+      licenseType: "desktop",
+      targetVersion: hmacMatch.ver,
+      isDeviceMatch: true,
+      isExpired,
+      currentDevice: currentDev
+    });
+    return;
+  }
+
+  res.json({ valid: false });
+});
 
 // Public / Login Screen: Activate Device directly with Encrypted Activation Code or License Key
 router.post("/licenses/activate-with-code", (req, res) => {

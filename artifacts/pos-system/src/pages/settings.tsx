@@ -9,7 +9,7 @@ import {
   useGetPrinterSettings, useUpdatePrinterSettings, getGetPrinterSettingsQueryKey,
 } from "@workspace/api-client-react";
 import type { SettingsInput, ReceiptCopyConfig, DepartmentPrintConfig, PrinterSettingsInput } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -23,7 +23,7 @@ import {
   Save, Plus, Trash2, Pencil, Printer, Copy, Building2, Settings2, Upload, X, ShieldCheck,
   Sparkles, Image as ImageIcon, Clock, Moon, Sun, CheckCircle2, AlertCircle, Plane,
   DollarSign, ShoppingCart, Users, Briefcase, FileSpreadsheet, ShieldAlert, Check, RefreshCw,
-  HelpCircle, ArrowRight, CalendarCheck
+  HelpCircle, ArrowRight, CalendarCheck, KeyRound, Fingerprint
 } from "lucide-react";
 import { fetchWithAuth } from "@workspace/api-client-react";
 
@@ -78,6 +78,43 @@ export default function Settings() {
     applyCutoffToHR: true,
   });
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [setupLicenseCode, setSetupLicenseCode] = useState("");
+  const [activatingSetupLicense, setActivatingSetupLicense] = useState(false);
+  const [setupActivatedModalData, setSetupActivatedModalData] = useState<any>(null);
+
+  const { data: activeLicenseInfo, refetch: refetchActiveLicense } = useQuery({
+    queryKey: ["active-license-setup"],
+    queryFn: () => fetch("/api/licenses/active").then(r => r.json()).catch(() => null),
+  });
+
+  const handleActivateInSetup = async () => {
+    if (!setupLicenseCode.trim()) return;
+    try {
+      setActivatingSetupLicense(true);
+      const res = await fetch("/api/licenses/activate-with-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activation_code: setupLicenseCode.trim(),
+          device_id: activeLicenseInfo?.current_device_id
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "فشل تفعيل الكود");
+      setSetupLicenseCode("");
+      setSetupActivatedModalData(data);
+      refetchActiveLicense();
+      qc.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+      toast({
+        title: "ألف مبروك تم الترخيص! 🎉✅",
+        description: "قم بتسجيل الدخول للنظام باسم المستخدم admin وكلمة السر admin123"
+      });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "خطأ في التفعيل", description: e.message });
+    } finally {
+      setActivatingSetupLicense(false);
+    }
+  };
 
   useEffect(() => {
     if (settings) setForm({ ...form, ...settings });
@@ -147,6 +184,122 @@ export default function Settings() {
 
           {/* ─── Business Tab ─── */}
           <TabsContent value="business" className="space-y-4 mt-4">
+            {/* ─── Active License Card in System Setup (تهيئة النظام) ─── */}
+            <Card className="border-2 border-emerald-500/40 bg-gradient-to-br from-emerald-50/50 via-white to-teal-50/30 dark:from-emerald-950/20 dark:to-slate-900 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-black flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-300">
+                    <KeyRound className="w-5 h-5 text-emerald-600" />
+                    <span>بيانات الترخيص الرقمي المعتمد في تهيئة النظام</span>
+                  </div>
+                  <Badge className={activeLicenseInfo?.active ? "bg-emerald-600 text-white font-bold" : "bg-red-600 text-white font-bold"}>
+                    {activeLicenseInfo?.active ? "النظام مرخص ومفعل ✅" : "غير مرخص"}
+                  </Badge>
+                </CardTitle>
+                <CardDescription className="text-xs font-medium">
+                  يتم تحديث هذه البيانات تلقائياً عند لصق وتفعيل كود الترخيص الرقمي المشفر الخاص ببصمة هذا الجهاز.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-emerald-200/80 dark:border-slate-800">
+                  <div>
+                    <span className="text-muted-foreground block text-[11px] mb-0.5">اسم المنشأة / العميل المرخص له:</span>
+                    <span className="font-black text-slate-900 dark:text-white text-sm">{activeLicenseInfo?.client_name || form.businessName || "شركة أومني لسفريات والسياحة"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px] mb-0.5">تاريخ انتهاء الترخيص:</span>
+                    <span className="font-mono font-black text-emerald-700 dark:text-emerald-400 text-sm">{activeLicenseInfo?.expires_at || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px] mb-0.5">عدد الأجهزة المسموح بها:</span>
+                    <span className="font-black text-blue-700 dark:text-blue-400 text-sm">{activeLicenseInfo?.devices_limit || 1} جهاز</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px] mb-0.5">بصمة هذا الجهاز (HWID):</span>
+                    <span className="font-mono font-black text-amber-700 dark:text-amber-400 dir-ltr inline-block">{activeLicenseInfo?.current_device_id || "—"}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                  <Input
+                    value={setupLicenseCode}
+                    onChange={e => setSetupLicenseCode(e.target.value)}
+                    placeholder="ألصق كود ترخيص رقمي مشفر جديد هنا لتحديث أو تمديد الترخيص في تهيئة النظام..."
+                    className="font-mono text-xs bg-white dark:bg-slate-900"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleActivateInSetup}
+                    disabled={!setupLicenseCode.trim() || activatingSetupLicense}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shrink-0 gap-1.5"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>{activatingSetupLicense ? "جاري فك التشفير..." : "فك التشفير وتحديث الترخيص"}</span>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {setupActivatedModalData && (
+              <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4 font-sans" dir="rtl">
+                <div className="bg-white rounded-3xl border-4 border-emerald-500 shadow-2xl max-w-lg w-full overflow-hidden transform animate-in fade-in-50 zoom-in-95 duration-200 text-right">
+                  <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-slate-900 text-white p-6 flex items-center gap-4">
+                    <div className="p-3 bg-white/20 rounded-2xl shadow-inner animate-bounce">
+                      <ShieldCheck className="w-10 h-10 text-yellow-300" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black">ألف مبروك تم الترخيص! 🎉✅</h3>
+                      <p className="text-xs text-white/95 font-bold mt-1">
+                        قم بتسجيل الدخول للنظام باسم المستخدم <span className="font-mono bg-white/20 px-1.5 py-0.5 rounded text-yellow-200">admin</span> وكلمة السر <span className="font-mono bg-white/20 px-1.5 py-0.5 rounded text-yellow-200">admin123</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl space-y-2 text-xs font-bold text-slate-700">
+                      <div className="flex justify-between">
+                        <span>المنشأة المرخص لها:</span>
+                        <span className="font-black text-slate-900">{setupActivatedModalData.clientName}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-emerald-100 pt-1.5">
+                        <span>تاريخ انتهاء الترخيص:</span>
+                        <span className="font-mono font-black text-emerald-800">{setupActivatedModalData.expiresAt}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-emerald-100 pt-1.5">
+                        <span>عدد الأجهزة المسموح بها:</span>
+                        <span className="font-black text-emerald-800">{setupActivatedModalData.devicesLimit} أجهزة</span>
+                      </div>
+                      <div className="flex justify-between border-t border-emerald-100 pt-1.5">
+                        <span>بصمة الجهاز المعتمد:</span>
+                        <span className="font-mono font-black text-slate-900 dir-ltr">{setupActivatedModalData.deviceId}</span>
+                      </div>
+                    </div>
+                    <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 text-center space-y-2">
+                      <div className="text-xs font-black text-yellow-400">بيانات الدخول الافتراضية المعتمدة:</div>
+                      <div className="grid grid-cols-2 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                        <div>
+                          <span className="text-[11px] text-slate-400 block">اسم المستخدم</span>
+                          <span className="font-mono text-sm font-black text-yellow-300">admin</span>
+                        </div>
+                        <div className="border-r border-slate-800">
+                          <span className="text-[11px] text-slate-400 block">كلمة السر</span>
+                          <span className="font-mono text-sm font-black text-yellow-300">admin123</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 px-6 py-4 flex justify-end border-t">
+                    <Button
+                      type="button"
+                      onClick={() => setSetupActivatedModalData(null)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-6"
+                    >
+                      حسناً، متابعة العمل ✅
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <Card>
               <CardHeader>
                 <CardTitle>معلومات النشاط التجاري</CardTitle>
